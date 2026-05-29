@@ -1,35 +1,33 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 
 from app.config import get_settings
 from app.models.user import init_db
-from app.models.document import Document, Project, Chunk  # ensure tables are registered
+from app.models.document import Document, Project, Chunk  # register tables
 from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.projects import router as projects_router
+from app.api.embeddings import router as embeddings_router
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure upload dir exists
     Path("uploads").mkdir(exist_ok=True)
-    # Create all tables
+    Path("chroma_db").mkdir(exist_ok=True)
     await init_db()
-    print(f"✅ GraphMind RAG started — DB initialised (Day 2: documents + projects ready)")
+    print("✅ GraphMind RAG v0.3.0 — Auth + Documents + Embeddings ready")
     yield
-    print("👋 GraphMind RAG shutting down")
+    print("👋 Shutting down")
 
 
 app = FastAPI(
     title="GraphMind RAG API",
-    description="Knowledge Graph + Vector RAG backend",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -41,13 +39,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(documents_router)
 app.include_router(projects_router)
+app.include_router(embeddings_router)
 
 
-# ─── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": settings.app_name, "version": "0.2.0"}
+    return {"status": "ok", "app": settings.app_name, "version": "0.3.0"}

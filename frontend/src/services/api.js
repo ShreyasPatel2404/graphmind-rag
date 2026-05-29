@@ -7,14 +7,12 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// ─── Request: attach JWT ──────────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("gm_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// ─── Response: auto-logout on 401 ────────────────────────────────────────────
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -36,30 +34,32 @@ export const authAPI = {
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 export const documentsAPI = {
-  // Upload a file (multipart/form-data)
   upload: (file, projectId = null) => {
     const form = new FormData();
     form.append("file", file);
     if (projectId) form.append("project_id", projectId);
     return api.post("/api/documents/upload", form, {
       headers: { "Content-Type": "multipart/form-data" },
-      onUploadProgress: undefined, // caller can pass via config if needed
     });
   },
-
-  // Ingest a URL
   ingestUrl: (url, projectId = null) =>
     api.post("/api/documents/ingest-url", { url, project_id: projectId }),
-
-  // List all documents (optionally filter by project)
-  list: (projectId = null) =>
+  list:   (projectId = null) =>
     api.get("/api/documents", { params: projectId ? { project_id: projectId } : {} }),
-
-  // Get single document
-  get: (id) => api.get(`/api/documents/${id}`),
-
-  // Delete document
+  get:    (id) => api.get(`/api/documents/${id}`),
   delete: (id) => api.delete(`/api/documents/${id}`),
+};
+
+// ─── Embeddings ───────────────────────────────────────────────────────────────
+export const embeddingsAPI = {
+  // Trigger embedding for a document
+  process: (docId) => api.post(`/api/embeddings/${docId}/process`),
+
+  // Poll embedding status
+  status:  (docId) => api.get(`/api/embeddings/${docId}/status`),
+
+  // Check Ollama health
+  health:  ()      => api.get("/api/embeddings/health"),
 };
 
 // ─── Projects ─────────────────────────────────────────────────────────────────

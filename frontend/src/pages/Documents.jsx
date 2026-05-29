@@ -6,11 +6,10 @@ import { documentsAPI } from "../services/api";
 
 export default function Documents() {
   const navigate = useNavigate();
-  const [docs, setDocs]           = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [docs, setDocs]             = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [showUpload, setShowUpload] = useState(false);
-  const [filter, setFilter]       = useState("all"); // all | ready | processing | error
-  const [polling, setPolling]     = useState(false);
+  const [filter, setFilter]         = useState("all");
 
   // ─── Fetch docs ─────────────────────────────────────────────────────────────
   const fetchDocs = useCallback(async (quiet = false) => {
@@ -27,32 +26,46 @@ export default function Documents() {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
-  // ─── Poll while any doc is "processing" ─────────────────────────────────────
+  // ─── Poll while ANY doc is processing or embedding ───────────────────────
   useEffect(() => {
-    const hasProcessing = docs.some((d) => d.status === "processing");
-    if (hasProcessing && !polling) {
-      setPolling(true);
-      const interval = setInterval(() => fetchDocs(true), 2500);
-      return () => { clearInterval(interval); setPolling(false); };
-    }
-  }, [docs, polling, fetchDocs]);
+    const hasActive = docs.some(
+      (d) => d.status === "processing"
+    );
+    if (!hasActive) return;
+
+    const interval = setInterval(() => fetchDocs(true), 2000);
+    return () => clearInterval(interval);
+  }, [docs, fetchDocs]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
   const handleUploaded = (newDoc) => {
     setDocs((prev) => [newDoc, ...prev]);
     setShowUpload(false);
+    // Refresh quickly to catch fast background processing
+    setTimeout(() => fetchDocs(true), 800);
+    setTimeout(() => fetchDocs(true), 2500);
+    setTimeout(() => fetchDocs(true), 5000);
   };
 
   const handleDeleted = (id) => {
     setDocs((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const filtered = filter === "all" ? docs : docs.filter((d) => d.status === filter);
+  const handleStatusChange = (id, newStatus) => {
+    setDocs((prev) =>
+      prev.map((d) => d.id === id ? { ...d, status: newStatus } : d)
+    );
+  };
+
+  const filtered = filter === "all"
+    ? docs
+    : docs.filter((d) => d.status === filter);
 
   const counts = {
     all:        docs.length,
     ready:      docs.filter((d) => d.status === "ready").length,
     processing: docs.filter((d) => d.status === "processing").length,
+    embedded:   docs.filter((d) => d.status === "embedded").length,
     error:      docs.filter((d) => d.status === "error").length,
   };
 
@@ -78,7 +91,8 @@ export default function Documents() {
           </button>
           <button
             onClick={() => setShowUpload((v) => !v)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition flex items-center gap-2"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium
+                       px-4 py-2 rounded-lg transition flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -100,7 +114,8 @@ export default function Documents() {
             title="Refresh"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>
@@ -110,7 +125,10 @@ export default function Documents() {
           <div className="mb-8 bg-[#13131a] border border-slate-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-white font-semibold">Add Document</h2>
-              <button onClick={() => setShowUpload(false)} className="text-slate-500 hover:text-white transition">
+              <button
+                onClick={() => setShowUpload(false)}
+                className="text-slate-500 hover:text-white transition"
+              >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -120,20 +138,25 @@ export default function Documents() {
           </div>
         )}
 
-        {/* Filter tabs */}
-        <div className="flex gap-1 mb-6 bg-[#13131a] border border-slate-800 rounded-xl p-1 w-fit">
-          {["all", "ready", "processing", "error"].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition capitalize ${
-                filter === f
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              {f} {counts[f] > 0 && <span className="ml-1 opacity-60">({counts[f]})</span>}
-            </button>
+        {/* Filter tabs — include "embedded" tab */}
+        <div className="flex gap-1 mb-6 bg-[#13131a] border border-slate-800 rounded-xl p-1 w-fit flex-wrap">
+          {["all", "ready", "embedded", "processing", "error"].map((f) => (
+            counts[f] > 0 || f === "all" ? (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition capitalize ${
+                  filter === f
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {f}{" "}
+                {counts[f] > 0 && (
+                  <span className="ml-1 opacity-60">({counts[f]})</span>
+                )}
+              </button>
+            ) : null
           ))}
         </div>
 
@@ -149,10 +172,13 @@ export default function Documents() {
           <div className="text-center py-20">
             <div className="text-5xl mb-4">📂</div>
             <p className="text-slate-400 font-medium">No documents yet</p>
-            <p className="text-slate-600 text-sm mt-1">Upload a PDF, DOCX, TXT, or ingest a URL</p>
+            <p className="text-slate-600 text-sm mt-1">
+              Upload a PDF, DOCX, TXT, or ingest a URL
+            </p>
             <button
               onClick={() => setShowUpload(true)}
-              className="mt-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition"
+              className="mt-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm
+                         font-medium px-5 py-2.5 rounded-lg transition"
             >
               Upload your first document
             </button>
@@ -160,7 +186,12 @@ export default function Documents() {
         ) : (
           <div className="space-y-3">
             {filtered.map((doc) => (
-              <DocumentCard key={doc.id} doc={doc} onDeleted={handleDeleted} />
+              <DocumentCard
+                key={doc.id}
+                doc={doc}
+                onDeleted={handleDeleted}
+                onStatusChange={handleStatusChange}
+              />
             ))}
           </div>
         )}
