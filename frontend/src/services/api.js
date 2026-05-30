@@ -7,12 +7,14 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// ─── Request: attach JWT ──────────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("gm_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
+// ─── Response: auto-logout on 401 ────────────────────────────────────────────
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -52,14 +54,24 @@ export const documentsAPI = {
 
 // ─── Embeddings ───────────────────────────────────────────────────────────────
 export const embeddingsAPI = {
-  // Trigger embedding for a document
   process: (docId) => api.post(`/api/embeddings/${docId}/process`),
-
-  // Poll embedding status
   status:  (docId) => api.get(`/api/embeddings/${docId}/status`),
-
-  // Check Ollama health
   health:  ()      => api.get("/api/embeddings/health"),
+};
+
+// ─── Graph ────────────────────────────────────────────────────────────────────
+export const graphAPI = {
+  // Trigger knowledge graph build for a document
+  build:  (docId) => api.post(`/api/graph/build/${docId}`),
+
+  // Get graph JSON {nodes, edges} for D3
+  get:    (docId) => api.get(`/api/graph/${docId}`),
+
+  // Poll build status
+  status: (docId) => api.get(`/api/graph/status/${docId}`),
+
+  // Neo4j health check
+  health: ()      => api.get("/api/graph/health"),
 };
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
