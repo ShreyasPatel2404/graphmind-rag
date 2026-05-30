@@ -1,11 +1,12 @@
 import os
 import uuid
+import logging
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt_handler import get_current_user
@@ -15,8 +16,8 @@ from app.utils.file_parser import parse_file, parse_url
 from app.utils.chunker import split_text
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
-# ─── Upload dir ────────────────────────────────────────────────────────────────
 UPLOAD_ROOT = Path("uploads")
 ALLOWED_TYPES = {"pdf", "docx", "txt"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
@@ -61,53 +62,83 @@ class URLIngestRequest(BaseModel):
     project_id: Optional[int] = None
 
 
-# ─── Background processing ─────────────────────────────────────────────────────
+# ─── Background processing (Windows-safe) ─────────────────────────────────────
 async def process_document(doc_id: int, file_bytes: bytes, file_type: str, db_factory):
     """Parse file + chunk + save chunks. Runs in background."""
-    async with db_factory() as db:
-        result = await db.execute(select(Document).where(Document.id == doc_id))
-        doc = result.scalar_one_or_none()
-        if not doc:
-            return
+    logger.info(f"Background processing started for doc {doc_id}")
 
-        try:
-            # 1. Parse
-            parsed = parse_file(file_bytes, file_type)
-            if parsed["error"]:
-                doc.status = "error"
-                doc.error_msg = parsed["error"]
-                await db.commit()
+    try:
+        async with db_factory() as db:
+            # Fetch document
+            result = await db.execute(
+                select(Document).where(Document.id == doc_id)
+            )
+            doc = result.scalar_one_or_none()
+            if not doc:
+                logger.error(f"Doc {doc_id} not found in background task")
                 return
 
-            # 2. Chunk
-            raw_chunks = split_text(parsed["text"])
-            if not raw_chunks:
-                doc.status = "error"
-                doc.error_msg = "No text content could be extracted"
+            try:
+                # 1. Parse
+                logger.info(f"Parsing {file_type} for doc {doc_id}")
+                parsed = parse_file(file_bytes, file_type)
+
+                if parsed["error"]:
+                    doc.status = "error"
+                    doc.error_msg = parsed["error"]
+                    await db.commit()
+                    logger.error(f"Parse error for doc {doc_id}: {parsed['error']}")
+                    return
+
+                if not parsed["text"] or not parsed["text"].strip():
+                    doc.status = "error"
+                    doc.error_msg = "No text content could be extracted from this file"
+                    await db.commit()
+                    return
+
+                # 2. Chunk
+                logger.info(f"Chunking text for doc {doc_id}")
+                raw_chunks = split_text(parsed["text"])
+
+                if not raw_chunks:
+                    doc.status = "error"
+                    doc.error_msg = "Text was extracted but could not be split into chunks"
+                    await db.commit()
+                    return
+
+                # 3. Save chunks (one by one to avoid batch issues on Windows)
+                logger.info(f"Saving {len(raw_chunks)} chunks for doc {doc_id}")
+                for c in raw_chunks:
+                    chunk = Chunk(
+                        document_id=doc_id,
+                        user_id=doc.user_id,
+                        chunk_index=c["chunk_index"],
+                        content=c["content"],
+                        char_start=c["char_start"],
+                        char_end=c["char_end"],
+                    )
+                    db.add(chunk)
+
+                # 4. Update document status
+                doc.status      = "ready"
+                doc.chunk_count = len(raw_chunks)
+                doc.page_count  = parsed.get("page_count")
+                doc.error_msg   = None
+
                 await db.commit()
-                return
+                logger.info(f"Doc {doc_id} processing complete: {len(raw_chunks)} chunks, status=ready")
 
-            # 3. Save chunks
-            for c in raw_chunks:
-                chunk = Chunk(
-                    document_id=doc_id,
-                    user_id=doc.user_id,
-                    chunk_index=c["chunk_index"],
-                    content=c["content"],
-                    char_start=c["char_start"],
-                    char_end=c["char_end"],
-                )
-                db.add(chunk)
+            except Exception as e:
+                logger.error(f"Processing error for doc {doc_id}: {e}", exc_info=True)
+                try:
+                    doc.status    = "error"
+                    doc.error_msg = str(e)[:500]
+                    await db.commit()
+                except Exception as commit_err:
+                    logger.error(f"Failed to save error state: {commit_err}")
 
-            doc.status = "ready"
-            doc.chunk_count = len(raw_chunks)
-            doc.page_count = parsed.get("page_count")
-            await db.commit()
-
-        except Exception as e:
-            doc.status = "error"
-            doc.error_msg = str(e)
-            await db.commit()
+    except Exception as outer_e:
+        logger.error(f"Outer error in background task for doc {doc_id}: {outer_e}", exc_info=True)
 
 
 # ─── Upload file ───────────────────────────────────────────────────────────────
@@ -135,12 +166,19 @@ async def upload_document(
             detail="File too large. Maximum size is 20 MB.",
         )
 
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is empty.",
+        )
+
     # Save to disk
     user_dir = UPLOAD_ROOT / str(current_user.id)
     user_dir.mkdir(parents=True, exist_ok=True)
     safe_filename = f"{uuid.uuid4().hex}.{ext}"
     dest = user_dir / safe_filename
     dest.write_bytes(file_bytes)
+    logger.info(f"Saved file {safe_filename} ({len(file_bytes)} bytes) for user {current_user.id}")
 
     # Create DB record
     doc = Document(
@@ -156,8 +194,10 @@ async def upload_document(
     await db.flush()
     await db.refresh(doc)
     doc_id = doc.id
+    await db.commit()
 
-    # Import here to avoid circular at module load
+    logger.info(f"Created document record id={doc_id}, scheduling background task")
+
     from app.models.user import AsyncSessionLocal
 
     # Schedule background processing
@@ -189,39 +229,46 @@ async def ingest_url(
     await db.flush()
     await db.refresh(doc)
     doc_id = doc.id
+    await db.commit()
 
     from app.models.user import AsyncSessionLocal
 
     async def process_url_bg(did, url, db_factory):
-        async with db_factory() as session:
-            result = await session.execute(select(Document).where(Document.id == did))
-            d = result.scalar_one_or_none()
-            if not d:
-                return
-            try:
-                parsed = parse_url(url)
-                if parsed["error"]:
-                    d.status = "error"
-                    d.error_msg = parsed["error"]
-                    await session.commit()
+        try:
+            async with db_factory() as session:
+                result = await session.execute(
+                    select(Document).where(Document.id == did)
+                )
+                d = result.scalar_one_or_none()
+                if not d:
                     return
-                raw_chunks = split_text(parsed["text"])
-                for c in raw_chunks:
-                    session.add(Chunk(
-                        document_id=did,
-                        user_id=d.user_id,
-                        chunk_index=c["chunk_index"],
-                        content=c["content"],
-                        char_start=c["char_start"],
-                        char_end=c["char_end"],
-                    ))
-                d.status = "ready"
-                d.chunk_count = len(raw_chunks)
-                await session.commit()
-            except Exception as e:
-                d.status = "error"
-                d.error_msg = str(e)
-                await session.commit()
+                try:
+                    parsed = parse_url(url)
+                    if parsed["error"]:
+                        d.status    = "error"
+                        d.error_msg = parsed["error"]
+                        await session.commit()
+                        return
+                    raw_chunks = split_text(parsed["text"])
+                    for c in raw_chunks:
+                        session.add(Chunk(
+                            document_id=did,
+                            user_id=d.user_id,
+                            chunk_index=c["chunk_index"],
+                            content=c["content"],
+                            char_start=c["char_start"],
+                            char_end=c["char_end"],
+                        ))
+                    d.status      = "ready"
+                    d.chunk_count = len(raw_chunks)
+                    d.error_msg   = None
+                    await session.commit()
+                except Exception as e:
+                    d.status    = "error"
+                    d.error_msg = str(e)[:500]
+                    await session.commit()
+        except Exception as e:
+            logger.error(f"URL ingest bg error: {e}", exc_info=True)
 
     background_tasks.add_task(process_url_bg, doc_id, payload.url, AsyncSessionLocal)
     return DocumentOut.from_orm_dt(doc)
@@ -251,7 +298,10 @@ async def get_document(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Document).where(Document.id == doc_id, Document.user_id == current_user.id)
+        select(Document).where(
+            Document.id == doc_id,
+            Document.user_id == current_user.id,
+        )
     )
     doc = result.scalar_one_or_none()
     if not doc:
@@ -267,7 +317,10 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Document).where(Document.id == doc_id, Document.user_id == current_user.id)
+        select(Document).where(
+            Document.id == doc_id,
+            Document.user_id == current_user.id,
+        )
     )
     doc = result.scalar_one_or_none()
     if not doc:

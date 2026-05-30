@@ -28,24 +28,27 @@ export default function Documents() {
 
   // ─── Poll while ANY doc is processing or embedding ───────────────────────
   useEffect(() => {
-    const hasActive = docs.some(
-      (d) => d.status === "processing"
-    );
-    if (!hasActive) return;
+  const hasActive = docs.some((d) =>
+    ["processing", "graph_building"].includes(d.status)
+  );
+  if (!hasActive) return;
 
-    const interval = setInterval(() => fetchDocs(true), 2000);
-    return () => clearInterval(interval);
-  }, [docs, fetchDocs]);
+  // Poll faster — every 1.5s instead of 2s
+  const interval = setInterval(() => fetchDocs(true), 1500);
+  return () => clearInterval(interval);
+}, [docs, fetchDocs]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
   const handleUploaded = (newDoc) => {
-    setDocs((prev) => [newDoc, ...prev]);
-    setShowUpload(false);
-    // Refresh quickly to catch fast background processing
-    setTimeout(() => fetchDocs(true), 800);
-    setTimeout(() => fetchDocs(true), 2500);
-    setTimeout(() => fetchDocs(true), 5000);
-  };
+  setDocs((prev) => [newDoc, ...prev]);
+  setShowUpload(false);
+  // Rapid-fire refreshes to catch the fast background task
+  setTimeout(() => fetchDocs(true), 500);
+  setTimeout(() => fetchDocs(true), 1200);
+  setTimeout(() => fetchDocs(true), 2500);
+  setTimeout(() => fetchDocs(true), 4000);
+  setTimeout(() => fetchDocs(true), 7000);
+};
 
   const handleDeleted = (id) => {
     setDocs((prev) => prev.filter((d) => d.id !== id));

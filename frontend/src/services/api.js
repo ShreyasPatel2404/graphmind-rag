@@ -7,14 +7,12 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// ─── Request: attach JWT ──────────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("gm_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// ─── Response: auto-logout on 401 ────────────────────────────────────────────
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -61,17 +59,21 @@ export const embeddingsAPI = {
 
 // ─── Graph ────────────────────────────────────────────────────────────────────
 export const graphAPI = {
-  // Trigger knowledge graph build for a document
   build:  (docId) => api.post(`/api/graph/build/${docId}`),
-
-  // Get graph JSON {nodes, edges} for D3
   get:    (docId) => api.get(`/api/graph/${docId}`),
-
-  // Poll build status
   status: (docId) => api.get(`/api/graph/status/${docId}`),
-
-  // Neo4j health check
   health: ()      => api.get("/api/graph/health"),
+};
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+export const chatAPI = {
+  // Sessions
+  createSession: (data) => api.post("/api/chat/sessions", data),
+  listSessions:  ()     => api.get("/api/chat/sessions"),
+  getMessages:   (id)   => api.get(`/api/chat/sessions/${id}/messages`),
+  deleteSession: (id)   => api.delete(`/api/chat/sessions/${id}`),
+
+  // Streaming is done via native fetch in Chat.jsx (SSE not supported by axios)
 };
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
