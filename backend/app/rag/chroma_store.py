@@ -1,6 +1,6 @@
 """
 chroma_store.py — ChromaDB wrapper
-One collection per user: "user_{user_id}_docs"
+Fixed: document_ids filter uses correct ChromaDB $in syntax
 """
 
 import logging
@@ -11,7 +11,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# ─── Client (persistent local storage) ───────────────────────────────────────
 CHROMA_DIR = Path("chroma_db")
 CHROMA_DIR.mkdir(exist_ok=True)
 
@@ -32,14 +31,22 @@ def get_collection(user_id: int, project_id: Optional[int] = None):
     """Get or create a ChromaDB collection for this user/project."""
     client = get_client()
     name = f"user_{user_id}" if not project_id else f"user_{user_id}_proj_{project_id}"
-    # ChromaDB collection names: only alphanumeric + underscores
     return client.get_or_create_collection(
         name=name,
         metadata={"hnsw:space": "cosine"},
     )
 
 
-# ─── Store chunks ─────────────────────────────────────────────────────────────
+def list_all_collections() -> list[str]:
+    """List all collection names — useful for debugging."""
+    try:
+        client = get_client()
+        return [c.name for c in client.list_collections()]
+    except Exception as e:
+        logger.error(f"Failed to list collections: {e}")
+        return []
+
+
 def store_chunks(
     user_id: int,
     document_id: int,
@@ -48,15 +55,15 @@ def store_chunks(
     project_id: Optional[int] = None,
     metadatas: Optional[List[dict]] = None,
 ):
-    """
-    Upsert chunk embeddings into ChromaDB.
-    IDs are scoped to document: doc_{doc_id}_chunk_{idx}
-    """
+    """Upsert chunk embeddings into ChromaDB."""
     collection = get_collection(user_id, project_id)
 
     ids = [f"doc_{document_id}_chunk_{i}" for i in range(len(chunks))]
 
-    base_meta = {"document_id": document_id, "user_id": user_id}
+    base_meta = {
+        "document_id": document_id,
+        "user_id":     user_id,
+    }
     if metadatas:
         metas = [{**base_meta, **m} for m in metadatas]
     else:
@@ -72,10 +79,13 @@ def store_chunks(
             documents=chunks[start:end],
             metadatas=metas[start:end],
         )
-    logger.info(f"Stored {len(chunks)} chunks for doc {document_id} in ChromaDB")
+
+    logger.info(
+        f"Stored {len(chunks)} chunks for doc {document_id} "
+        f"in collection user={user_id} project={project_id}"
+    )
 
 
-# ─── Query ────────────────────────────────────────────────────────────────────
 def query_similar(
     user_id: int,
     query_vector: List[float],
@@ -89,44 +99,72 @@ def query_similar(
     """
     try:
         collection = get_collection(user_id, project_id)
+        total = collection.count()
 
+        if total == 0:
+            logger.warning(
+                f"Collection user={user_id} project={project_id} is empty. "
+                f"Available collections: {list_all_collections()}"
+            )
+            return []
+
+        # ── Build where filter ──────────────────────────────────────────
+        # ChromaDB requires integer values in metadata for $in operator.
+        # document_id is stored as int — use $in only when filtering.
         where = None
-        if document_ids:
-            where = {"document_id": {"$in": document_ids}}
+        if document_ids and len(document_ids) > 0:
+            if len(document_ids) == 1:
+                # Single doc — use $eq (simpler, more reliable)
+                where = {"document_id": {"$eq": document_ids[0]}}
+            else:
+                # Multiple docs — use $in
+                where = {"document_id": {"$in": document_ids}}
+
+        safe_n = min(n_results, total)
+        logger.info(
+            f"ChromaDB query: collection=user_{user_id}_proj{project_id}, "
+            f"total={total}, n={safe_n}, where={where}"
+        )
 
         results = collection.query(
             query_embeddings=[query_vector],
-            n_results=min(n_results, collection.count() or 1),
+            n_results=safe_n,
             where=where,
             include=["documents", "metadatas", "distances"],
         )
 
         output = []
         for i, doc in enumerate(results["documents"][0]):
+            meta = results["metadatas"][0][i]
             output.append({
                 "content":     doc,
-                "document_id": results["metadatas"][0][i].get("document_id"),
+                "document_id": meta.get("document_id"),
                 "distance":    results["distances"][0][i],
-                "chunk_index": results["metadatas"][0][i].get("chunk_index", i),
+                "chunk_index": meta.get("chunk_index", i),
             })
+
+        logger.info(f"ChromaDB returned {len(output)} results")
         return output
+
     except Exception as e:
-        logger.error(f"ChromaDB query error: {e}")
+        logger.error(f"ChromaDB query error: {e}", exc_info=True)
         return []
 
 
-# ─── Delete document chunks ───────────────────────────────────────────────────
-def delete_document_chunks(user_id: int, document_id: int, project_id: Optional[int] = None):
+def delete_document_chunks(
+    user_id: int,
+    document_id: int,
+    project_id: Optional[int] = None,
+):
     """Remove all chunks for a document from ChromaDB."""
     try:
         collection = get_collection(user_id, project_id)
-        collection.delete(where={"document_id": document_id})
+        collection.delete(where={"document_id": {"$eq": document_id}})
         logger.info(f"Deleted chunks for doc {document_id} from ChromaDB")
     except Exception as e:
         logger.error(f"ChromaDB delete error: {e}")
 
 
-# ─── Stats ────────────────────────────────────────────────────────────────────
 def collection_count(user_id: int, project_id: Optional[int] = None) -> int:
     try:
         return get_collection(user_id, project_id).count()

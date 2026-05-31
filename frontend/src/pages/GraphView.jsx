@@ -8,27 +8,25 @@ export default function GraphView() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const [docs,       setDocs]       = useState([]);
-  const [selectedDoc,setSelectedDoc]= useState(null);
-  const [graphData,  setGraphData]  = useState({ nodes: [], edges: [] });
-  const [loading,    setLoading]    = useState(false);
-  const [building,   setBuilding]   = useState(false);
-  const [loadingDocs,setLoadingDocs]= useState(true);
+  const [docs,        setDocs]        = useState([]);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [graphData,   setGraphData]   = useState({ nodes: [], edges: [] });
+  const [loading,     setLoading]     = useState(false);
+  const [building,    setBuilding]    = useState(false);
+  const [loadingDocs, setLoadingDocs] = useState(true);
 
-  const pollRef      = useRef(null);
-  const toastFiredRef= useRef(false);
+  const pollRef       = useRef(null);
+  const toastFiredRef = useRef(false);   // ← single toast guard
 
-  // ─── Load documents on mount ─────────────────────────────────────────────
+  // ── Load documents on mount ───────────────────────────────────────────────
   useEffect(() => {
     documentsAPI.list()
       .then(({ data }) => {
-        // Only show embedded or graph_ready docs
         const eligible = data.filter((d) =>
           ["embedded", "graph_ready", "graph_building"].includes(d.status)
         );
         setDocs(eligible);
 
-        // Auto-select from URL param
         const paramId = searchParams.get("doc");
         if (paramId) {
           const found = eligible.find((d) => d.id === parseInt(paramId));
@@ -39,8 +37,10 @@ export default function GraphView() {
       .finally(() => setLoadingDocs(false));
   }, []);
 
-  // ─── Select a document ───────────────────────────────────────────────────
+  // ── Select a document ─────────────────────────────────────────────────────
   const handleSelectDoc = async (doc) => {
+    // Reset toast guard for each new doc selection
+    toastFiredRef.current = false;
     setSelectedDoc(doc);
     setGraphData({ nodes: [], edges: [] });
 
@@ -50,25 +50,34 @@ export default function GraphView() {
       setBuilding(true);
       startPolling(doc.id);
     }
+    // "embedded" status → show Build button, do nothing else
   };
 
-  // ─── Load graph data ─────────────────────────────────────────────────────
+  // ── Load graph data ───────────────────────────────────────────────────────
   const loadGraph = async (docId) => {
     setLoading(true);
+    // Reset toast guard before each load
+    toastFiredRef.current = false;
     try {
       const { data } = await graphAPI.get(docId);
       setGraphData({ nodes: data.nodes, edges: data.edges });
-      if (data.node_count === 0) {
-        toast.info("Graph built but no entities found — try a different document");
+
+      // Fire toast only once per load
+      if (data.node_count === 0 && !toastFiredRef.current) {
+        toastFiredRef.current = true;
+        toast.info("No entities found — try rebuilding the graph");
       }
     } catch {
-      toast.error("Failed to load graph data");
+      if (!toastFiredRef.current) {
+        toastFiredRef.current = true;
+        toast.error("Failed to load graph data");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Build graph ─────────────────────────────────────────────────────────
+  // ── Build graph ───────────────────────────────────────────────────────────
   const handleBuildGraph = async () => {
     if (!selectedDoc) return;
     setBuilding(true);
@@ -86,7 +95,7 @@ export default function GraphView() {
     }
   };
 
-  // ─── Poll for graph_ready ────────────────────────────────────────────────
+  // ── Poll for graph_ready ──────────────────────────────────────────────────
   const startPolling = (docId) => {
     if (pollRef.current) clearInterval(pollRef.current);
 
@@ -98,8 +107,9 @@ export default function GraphView() {
           clearInterval(pollRef.current);
           pollRef.current = null;
           setBuilding(false);
-          setSelectedDoc((prev) => ({ ...prev, status: "graph_ready" }));
+          setSelectedDoc((prev) => prev ? { ...prev, status: "graph_ready" } : prev);
           await loadGraph(docId);
+          // Success toast fires inside loadGraph only if node_count > 0
           if (!toastFiredRef.current) {
             toastFiredRef.current = true;
             toast.success("Knowledge graph built successfully!");
@@ -154,7 +164,6 @@ export default function GraphView() {
             <p className="text-slate-500 text-xs mt-1">Select an embedded document</p>
           </div>
 
-          {/* Doc list */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {loadingDocs ? (
               <div className="flex justify-center py-8">
@@ -218,10 +227,9 @@ export default function GraphView() {
                   <><BuildIcon /> Build Knowledge Graph</>
                 )}
               </button>
-
               {building && (
                 <p className="text-slate-500 text-xs text-center mt-2">
-                  Extracting entities with Ollama LLM…
+                  Extracting entities with Ollama… (30–90s)
                 </p>
               )}
             </div>
@@ -268,9 +276,7 @@ export default function GraphView() {
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <div className="text-6xl mb-4">🕸️</div>
               <p className="text-slate-400 font-medium">Select a document to visualize</p>
-              <p className="text-slate-600 text-sm mt-1">
-                Choose an embedded document from the sidebar
-              </p>
+              <p className="text-slate-600 text-sm mt-1">Choose an embedded document from the sidebar</p>
             </div>
           )}
 
@@ -294,7 +300,7 @@ function BuildIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round"
-        d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
+        d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/>
     </svg>
   );
 }
@@ -303,7 +309,7 @@ function RebuildIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round"
-        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
     </svg>
   );
 }

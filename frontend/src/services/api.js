@@ -25,14 +25,12 @@ api.interceptors.response.use(
   }
 );
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 export const authAPI = {
   register: (data) => api.post("/api/auth/register", data),
   login:    (data) => api.post("/api/auth/login/json", data),
   me:       ()     => api.get("/api/auth/me"),
 };
 
-// ─── Documents ────────────────────────────────────────────────────────────────
 export const documentsAPI = {
   upload: (file, projectId = null) => {
     const form = new FormData();
@@ -50,14 +48,12 @@ export const documentsAPI = {
   delete: (id) => api.delete(`/api/documents/${id}`),
 };
 
-// ─── Embeddings ───────────────────────────────────────────────────────────────
 export const embeddingsAPI = {
   process: (docId) => api.post(`/api/embeddings/${docId}/process`),
   status:  (docId) => api.get(`/api/embeddings/${docId}/status`),
   health:  ()      => api.get("/api/embeddings/health"),
 };
 
-// ─── Graph ────────────────────────────────────────────────────────────────────
 export const graphAPI = {
   build:  (docId) => api.post(`/api/graph/build/${docId}`),
   get:    (docId) => api.get(`/api/graph/${docId}`),
@@ -65,23 +61,22 @@ export const graphAPI = {
   health: ()      => api.get("/api/graph/health"),
 };
 
-// ─── Chat ─────────────────────────────────────────────────────────────────────
 export const chatAPI = {
-  // Sessions
   createSession: (data) => api.post("/api/chat/sessions", data),
   listSessions:  ()     => api.get("/api/chat/sessions"),
   getMessages:   (id)   => api.get(`/api/chat/sessions/${id}/messages`),
   deleteSession: (id)   => api.delete(`/api/chat/sessions/${id}`),
-
-  // Streaming is done via native fetch in Chat.jsx (SSE not supported by axios)
 };
 
-// ─── Projects ─────────────────────────────────────────────────────────────────
 export const projectsAPI = {
-  create: (data) => api.post("/api/projects", data),
-  list:   ()     => api.get("/api/projects"),
-  get:    (id)   => api.get(`/api/projects/${id}`),
-  delete: (id)   => api.delete(`/api/projects/${id}`),
+  create:         (data)          => api.post("/api/projects", data),
+  list:           ()              => api.get("/api/projects"),
+  get:            (id)            => api.get(`/api/projects/${id}`),
+  delete:         (id)            => api.delete(`/api/projects/${id}`),
+  getDocuments:   (id)            => api.get(`/api/projects/${id}/documents`),
+  addDocuments:   (id, docIds)    => api.post(`/api/projects/${id}/documents`, { document_ids: docIds }),
+  removeDocument: (id, docId)     => api.delete(`/api/projects/${id}/documents/${docId}`),
+  getGraph:       (id)            => api.get(`/api/projects/${id}/graph`),
 };
 
 export default api;

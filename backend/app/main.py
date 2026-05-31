@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.models.user import init_db
 from app.models.document import Document, Project, Chunk
-from app.models.chat import ChatSession, ChatMessage        # register tables
+from app.models.chat import ChatSession, ChatMessage
 from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.projects import router as projects_router
@@ -23,16 +23,12 @@ async def lifespan(app: FastAPI):
     Path("uploads").mkdir(exist_ok=True)
     Path("chroma_db").mkdir(exist_ok=True)
     await init_db()
-    print("✅ GraphMind RAG v0.5.0 — Chat + Hybrid RAG + Citations ready")
+    print("✅ GraphMind RAG v0.6.0 — Multi-doc Projects + Graph Merging ready")
     yield
     print("👋 Shutting down")
 
 
-app = FastAPI(
-    title="GraphMind RAG API",
-    version="0.5.0",
-    lifespan=lifespan,
-)
+app = FastAPI(title="GraphMind RAG API", version="0.6.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,4 +48,4 @@ app.include_router(chat_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": settings.app_name, "version": "0.5.0"}
+    return {"status": "ok", "app": settings.app_name, "version": "0.6.0"}

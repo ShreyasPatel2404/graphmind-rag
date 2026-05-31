@@ -1,34 +1,67 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ChatMessage from "../components/ChatMessage";
 import ChatInput   from "../components/ChatInput";
-import { chatAPI, documentsAPI } from "../services/api";
+import { chatAPI, documentsAPI, projectsAPI } from "../services/api";
 import { toast } from "../components/Toast";
 
 export default function Chat() {
   const navigate = useNavigate();
-  const [sessions,     setSessions]     = useState([]);
-  const [activeSession,setActiveSession]= useState(null);
-  const [messages,     setMessages]     = useState([]);
-  const [streaming,    setStreaming]     = useState(false);
-  const [allDocs,      setAllDocs]      = useState([]);
-  const [selectedDocs, setSelectedDocs] = useState([]);
-  const [loadingMsgs,  setLoadingMsgs]  = useState(false);
-  const messagesEndRef = useRef(null);
-  const abortRef       = useRef(null);
+  const [searchParams] = useSearchParams();
 
-  // ── Load sessions + docs on mount ─────────────────────────────────────────
+  const [sessions,       setSessions]       = useState([]);
+  const [activeSession,  setActiveSession]  = useState(null);
+  const [messages,       setMessages]       = useState([]);
+  const [streaming,      setStreaming]       = useState(false);
+  const [allDocs,        setAllDocs]        = useState([]);
+  const [selectedDocs,   setSelectedDocs]   = useState([]);
+  const [projects,       setProjects]       = useState([]);
+  const [activeProject,  setActiveProject]  = useState(null);
+  const [projectDocIds,  setProjectDocIds]  = useState([]);  // ← pre-loaded
+  const [loadingMsgs,    setLoadingMsgs]    = useState(false);
+  const messagesEndRef = useRef(null);
+
+  // ── Load on mount ────────────────────────────────────────────────────────
   useEffect(() => {
     chatAPI.listSessions().then(({ data }) => setSessions(data)).catch(() => {});
     documentsAPI.list().then(({ data }) => setAllDocs(data)).catch(() => {});
+    projectsAPI.list().then(({ data }) => {
+      setProjects(data);
+
+      // Auto-select project from URL ?project=id
+      const projectParam = searchParams.get("project");
+      if (projectParam) {
+        const found = data.find((p) => p.id === parseInt(projectParam));
+        if (found) setActiveProject(found);
+      }
+    }).catch(() => {});
   }, []);
 
-  // ── Auto-scroll ───────────────────────────────────────────────────────────
+  // ── Pre-load project doc IDs whenever activeProject changes ──────────────
+  useEffect(() => {
+    if (!activeProject) {
+      setProjectDocIds([]);
+      return;
+    }
+    projectsAPI.getDocuments(activeProject.id)
+      .then(({ data }) => {
+        const ids = data
+          .filter((d) => ["embedded", "graph_ready"].includes(d.status))
+          .map((d) => d.id);
+        setProjectDocIds(ids);
+        if (ids.length === 0) {
+          toast.warn("No embedded documents in this project yet — embed docs first");
+        }
+      })
+      .catch(() => setProjectDocIds([]));
+  }, [activeProject]);
+
+  // ── Auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── Load messages for active session ──────────────────────────────────────
+  // ── Load messages ────────────────────────────────────────────────────────
   const loadMessages = useCallback(async (sessionId) => {
     setLoadingMsgs(true);
     try {
@@ -46,12 +79,8 @@ export default function Chat() {
     loadMessages(session.id);
   };
 
-  const newChat = () => {
-    setActiveSession(null);
-    setMessages([]);
-  };
+  const newChat = () => { setActiveSession(null); setMessages([]); };
 
-  // ── Delete session ────────────────────────────────────────────────────────
   const deleteSession = async (e, sessionId) => {
     e.stopPropagation();
     try {
@@ -59,33 +88,36 @@ export default function Chat() {
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (activeSession?.id === sessionId) newChat();
     } catch {
-      toast.error("Failed to delete session");
+      toast.error("Failed to delete");
     }
   };
 
-  // ── Send message ──────────────────────────────────────────────────────────
+  // ── Send message ─────────────────────────────────────────────────────────
   const handleSend = async (text) => {
     if (streaming) return;
 
-    // Optimistically add user message
+    // ── Determine which doc IDs to search ──────────────────────────────
+    // Project docs take priority; fallback to manually selected docs
+    const docIds = activeProject
+      ? (projectDocIds.length > 0 ? projectDocIds : null)
+      : (selectedDocs.length > 0  ? selectedDocs  : null);
+
+    if (activeProject && projectDocIds.length === 0) {
+      toast.error("No embedded documents in this project. Please embed documents first.");
+      return;
+    }
+
     const userMsg = {
-      id: Date.now(),
-      role: "user",
-      content: text,
+      id: Date.now(), role: "user", content: text,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
     setStreaming(true);
 
-    // Placeholder for assistant streaming message
     const assistantId = Date.now() + 1;
     setMessages((prev) => [...prev, {
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      citations: [],
-      streaming: true,
-      created_at: new Date().toISOString(),
+      id: assistantId, role: "assistant", content: "",
+      citations: [], streaming: true, created_at: new Date().toISOString(),
     }]);
 
     try {
@@ -93,12 +125,12 @@ export default function Chat() {
       const body  = JSON.stringify({
         message:      text,
         session_id:   activeSession?.id || null,
-        document_ids: selectedDocs.length > 0 ? selectedDocs : null,
-        project_id:   null,
+        document_ids: docIds,
+        project_id:   activeProject?.id || null,
       });
 
       const response = await fetch("http://localhost:8000/api/chat/stream", {
-        method:  "POST",
+        method: "POST",
         headers: {
           "Content-Type":  "application/json",
           "Authorization": `Bearer ${token}`,
@@ -108,12 +140,11 @@ export default function Chat() {
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const reader  = response.body.getReader();
-      const decoder = new TextDecoder();
-      let   buffer  = "";
-      let   fullText= "";
+      const reader    = response.body.getReader();
+      const decoder   = new TextDecoder();
+      let   buffer    = "";
+      let   fullText  = "";
       let   finalCitations = [];
-      let   newSessionId   = activeSession?.id || null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -128,42 +159,32 @@ export default function Chat() {
           try {
             const event = JSON.parse(line.slice(6));
 
-            if (event.type === "session_id") {
-              newSessionId = event.session_id;
-              // Update or add session in sidebar
-              if (!activeSession) {
-                const { data: newSess } = await chatAPI.listSessions();
-                setSessions(newSess);
-                const created = newSess.find((s) => s.id === newSessionId);
-                if (created) setActiveSession(created);
-              }
+            if (event.type === "session_id" && !activeSession) {
+              const { data: newSess } = await chatAPI.listSessions();
+              setSessions(newSess);
+              const created = newSess.find((s) => s.id === event.session_id);
+              if (created) setActiveSession(created);
+
             } else if (event.type === "token") {
               fullText += event.content;
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: fullText, streaming: true }
-                    : m
-                )
+                prev.map((m) => m.id === assistantId
+                  ? { ...m, content: fullText, streaming: true } : m)
               );
             } else if (event.type === "citations") {
               finalCitations = event.citations;
+
             } else if (event.type === "done") {
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: fullText, citations: finalCitations, streaming: false }
-                    : m
-                )
+                prev.map((m) => m.id === assistantId
+                  ? { ...m, content: fullText, citations: finalCitations, streaming: false } : m)
               );
-              // Refresh session list to update message count
               chatAPI.listSessions().then(({ data }) => setSessions(data)).catch(() => {});
+
             } else if (event.type === "error") {
               toast.error(event.content);
             }
-          } catch {
-            // Skip malformed SSE line
-          }
+          } catch {}
         }
       }
     } catch (err) {
@@ -173,6 +194,10 @@ export default function Chat() {
       setStreaming(false);
     }
   };
+
+  const embeddedDocs = allDocs.filter((d) =>
+    ["embedded", "graph_ready"].includes(d.status)
+  );
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
@@ -187,24 +212,59 @@ export default function Chat() {
           </div>
           <span className="font-bold text-lg tracking-tight">GraphMind RAG</span>
         </button>
+
+        {/* Project selector */}
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/documents")} className="text-sm text-slate-400 hover:text-white transition">Documents</button>
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500 text-sm">Project:</span>
+            <select
+              value={activeProject?.id || ""}
+              onChange={(e) => {
+                const p = projects.find((x) => x.id === parseInt(e.target.value));
+                setActiveProject(p || null);
+              }}
+              className="bg-[#1c1c26] border border-slate-700 text-white text-sm
+                         rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 transition"
+            >
+              <option value="">All documents</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={() => navigate("/documents")} className="text-sm text-slate-400 hover:text-white transition">Docs</button>
           <button onClick={() => navigate("/graph")}     className="text-sm text-slate-400 hover:text-white transition">Graph</button>
-          <button onClick={() => navigate("/dashboard")} className="text-sm text-slate-400 hover:text-white transition">Dashboard</button>
         </div>
       </nav>
+
+      {/* Project banner */}
+      {activeProject && (
+        <div className="bg-indigo-600/10 border-b border-indigo-500/20 px-6 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-indigo-400">📁</span>
+            <span className="text-indigo-300 font-medium">{activeProject.name}</span>
+            <span className="text-slate-500">
+              · {projectDocIds.length} embedded doc{projectDocIds.length !== 1 ? "s" : ""} · searching across all project documents
+            </span>
+          </div>
+          <button
+            onClick={() => setActiveProject(null)}
+            className="text-slate-500 hover:text-white text-xs transition"
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sessions sidebar */}
         <aside className="w-64 border-r border-slate-800 bg-[#0d0d14] flex flex-col flex-shrink-0">
           <div className="p-3 border-b border-slate-800">
-            <button
-              onClick={newChat}
+            <button onClick={newChat}
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm
-                         font-medium py-2 rounded-lg transition flex items-center justify-center gap-2"
-            >
+                         font-medium py-2 rounded-lg transition flex items-center justify-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
               </svg>
               New Chat
             </button>
@@ -215,26 +275,21 @@ export default function Chat() {
               <p className="text-slate-600 text-xs text-center py-6">No chats yet</p>
             ) : (
               sessions.map((s) => (
-                <div
-                  key={s.id}
-                  onClick={() => selectSession(s)}
+                <div key={s.id} onClick={() => selectSession(s)}
                   className={`group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition ${
                     activeSession?.id === s.id
                       ? "bg-indigo-600/20 border border-indigo-500/30"
                       : "hover:bg-slate-800 border border-transparent"
-                  }`}
-                >
+                  }`}>
                   <div className="min-w-0 flex-1">
                     <p className="text-slate-300 text-xs font-medium truncate">{s.title}</p>
                     <p className="text-slate-600 text-xs mt-0.5">{s.message_count} messages</p>
                   </div>
-                  <button
-                    onClick={(e) => deleteSession(e, s.id)}
+                  <button onClick={(e) => deleteSession(e, s.id)}
                     className="opacity-0 group-hover:opacity-100 text-slate-600
-                               hover:text-red-400 transition ml-1 flex-shrink-0"
-                  >
+                               hover:text-red-400 transition ml-1 flex-shrink-0">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                   </button>
                 </div>
@@ -245,19 +300,23 @@ export default function Chat() {
 
         {/* Chat area */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {messages.length === 0 && !loadingMsgs ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <div className="text-5xl mb-4">💬</div>
                 <h2 className="text-white font-semibold text-lg mb-2">
-                  Chat with your documents
+                  {activeProject
+                    ? `Chat with "${activeProject.name}"`
+                    : "Chat with your documents"}
                 </h2>
                 <p className="text-slate-500 text-sm max-w-sm">
-                  Ask anything about your embedded documents. Answers use both
-                  vector search and knowledge graph retrieval.
+                  {activeProject
+                    ? projectDocIds.length > 0
+                      ? `Searching across ${projectDocIds.length} embedded document${projectDocIds.length !== 1 ? "s" : ""}.`
+                      : "⚠ No embedded documents in this project yet. Go to Documents and embed them first."
+                    : "Ask anything about your embedded documents."}
                 </p>
-                {allDocs.filter((d) => ["embedded","graph_ready"].includes(d.status)).length === 0 && (
+                {!activeProject && embeddedDocs.length === 0 && (
                   <button
                     onClick={() => navigate("/documents")}
                     className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm transition"
@@ -274,20 +333,17 @@ export default function Chat() {
                 </svg>
               </div>
             ) : (
-              messages.map((msg) => (
-                <ChatMessage key={msg.id} message={msg} />
-              ))
+              messages.map((msg) => <ChatMessage key={msg.id} message={msg} />)
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <ChatInput
             onSend={handleSend}
             disabled={streaming}
             selectedDocs={selectedDocs}
             onDocsChange={setSelectedDocs}
-            allDocs={allDocs}
+            allDocs={activeProject ? [] : embeddedDocs}
           />
         </main>
       </div>
