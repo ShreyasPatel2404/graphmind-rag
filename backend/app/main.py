@@ -23,12 +23,12 @@ async def lifespan(app: FastAPI):
     Path("uploads").mkdir(exist_ok=True)
     Path("chroma_db").mkdir(exist_ok=True)
     await init_db()
-    print("✅ GraphMind RAG v0.6.0 — Multi-doc Projects + Graph Merging ready")
+    print("✅ GraphMind RAG v0.7.0 — CRAG + Graph Search + Feedback ready")
     yield
     print("👋 Shutting down")
 
 
-app = FastAPI(title="GraphMind RAG API", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="GraphMind RAG API", version="0.7.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,4 +48,4 @@ app.include_router(chat_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": settings.app_name, "version": "0.6.0"}
+    return {"status": "ok", "app": settings.app_name, "version": "0.7.0"}

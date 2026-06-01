@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from app.auth.jwt_handler import get_current_user
 from app.models.user import User, get_db, AsyncSessionLocal
 from app.models.document import Document, Chunk
 from app.rag.graph_builder import build_graph_from_chunks, fetch_graph_json
-from app.rag.neo4j_client import check_neo4j_health
+from app.rag.neo4j_client import check_neo4j_health, run_read
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 logger = logging.getLogger(__name__)
@@ -32,6 +32,13 @@ class Neo4jHealth(BaseModel):
     connected: bool
     uri: str | None = None
     error: str | None = None
+
+
+class GraphSearchResult(BaseModel):
+    node: str
+    node_type: str
+    connections: list[dict]
+    doc_id: int | None
 
 
 async def _build_graph_bg(doc_id: int, user_id: int):
@@ -65,7 +72,7 @@ async def _build_graph_bg(doc_id: int, user_id: int):
                 doc_id=doc_id,
                 user_id=user_id,
                 max_chunks=15,
-                project_id=doc.project_id,   # ← pass project_id for tagging
+                project_id=doc.project_id,
             )
             doc.status    = "graph_ready"
             doc.error_msg = None
@@ -104,14 +111,60 @@ async def build_graph(
                          message="Building knowledge graph…")
 
 
-# ─── GET /health ──────────────────────────────────────────────────────────────
+# ─── GET /health ─────────────────────────────────────────────────────────────
 @router.get("/health", response_model=Neo4jHealth)
 async def neo4j_health(_: User = Depends(get_current_user)):
     info = check_neo4j_health()
     return Neo4jHealth(**info)
 
 
-# ─── GET /status/{doc_id} ─────────────────────────────────────────────────────
+# ─── GET /search ──────────────────────────────────────────────────────────────
+@router.get("/search")
+async def search_graph(
+    q: str = Query(..., min_length=1, description="Entity name to search"),
+    current_user: User = Depends(get_current_user),
+):
+    """Search for entities in the graph by name and return their neighbors."""
+    try:
+        results = run_read(
+            f"""
+            MATCH (n:Entity)
+            WHERE toLower(n.name) CONTAINS toLower('{q.replace("'", "")}')
+              AND n.user_id = {current_user.id}
+            WITH n LIMIT 10
+            OPTIONAL MATCH (n)-[r:RELATES]-(neighbor:Entity)
+            RETURN
+                n.name       AS node,
+                n.type       AS node_type,
+                n.doc_id     AS doc_id,
+                collect({{
+                    neighbor: neighbor.name,
+                    relation: r.relation,
+                    direction: CASE WHEN startNode(r) = n THEN 'out' ELSE 'in' END
+                }}) AS connections
+            """
+        )
+
+        out = []
+        for row in results:
+            conns = [
+                c for c in (row.get("connections") or [])
+                if c.get("neighbor") is not None
+            ]
+            out.append({
+                "node":        row.get("node"),
+                "node_type":   row.get("node_type") or "Concept",
+                "doc_id":      row.get("doc_id"),
+                "connections": conns[:10],
+            })
+        return {"query": q, "results": out, "count": len(out)}
+
+    except Exception as e:
+        logger.error(f"Graph search error: {e}")
+        return {"query": q, "results": [], "count": 0}
+
+
+# ─── GET /status/{doc_id} ────────────────────────────────────────────────────
 @router.get("/status/{doc_id}")
 async def graph_status(
     doc_id: int,

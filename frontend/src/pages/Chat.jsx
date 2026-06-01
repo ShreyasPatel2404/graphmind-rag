@@ -17,18 +17,15 @@ export default function Chat() {
   const [selectedDocs,   setSelectedDocs]   = useState([]);
   const [projects,       setProjects]       = useState([]);
   const [activeProject,  setActiveProject]  = useState(null);
-  const [projectDocIds,  setProjectDocIds]  = useState([]);  // ← pre-loaded
+  const [projectDocIds,  setProjectDocIds]  = useState([]);
   const [loadingMsgs,    setLoadingMsgs]    = useState(false);
   const messagesEndRef = useRef(null);
 
-  // ── Load on mount ────────────────────────────────────────────────────────
   useEffect(() => {
     chatAPI.listSessions().then(({ data }) => setSessions(data)).catch(() => {});
     documentsAPI.list().then(({ data }) => setAllDocs(data)).catch(() => {});
     projectsAPI.list().then(({ data }) => {
       setProjects(data);
-
-      // Auto-select project from URL ?project=id
       const projectParam = searchParams.get("project");
       if (projectParam) {
         const found = data.find((p) => p.id === parseInt(projectParam));
@@ -37,31 +34,25 @@ export default function Chat() {
     }).catch(() => {});
   }, []);
 
-  // ── Pre-load project doc IDs whenever activeProject changes ──────────────
+  // Pre-load project doc IDs
   useEffect(() => {
-    if (!activeProject) {
-      setProjectDocIds([]);
-      return;
-    }
+    if (!activeProject) { setProjectDocIds([]); return; }
     projectsAPI.getDocuments(activeProject.id)
       .then(({ data }) => {
         const ids = data
           .filter((d) => ["embedded", "graph_ready"].includes(d.status))
           .map((d) => d.id);
         setProjectDocIds(ids);
-        if (ids.length === 0) {
-          toast.warn("No embedded documents in this project yet — embed docs first");
-        }
+        if (ids.length === 0)
+          toast.warn("No embedded documents in this project yet");
       })
       .catch(() => setProjectDocIds([]));
   }, [activeProject]);
 
-  // ── Auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── Load messages ────────────────────────────────────────────────────────
   const loadMessages = useCallback(async (sessionId) => {
     setLoadingMsgs(true);
     try {
@@ -74,11 +65,7 @@ export default function Chat() {
     }
   }, []);
 
-  const selectSession = (session) => {
-    setActiveSession(session);
-    loadMessages(session.id);
-  };
-
+  const selectSession = (session) => { setActiveSession(session); loadMessages(session.id); };
   const newChat = () => { setActiveSession(null); setMessages([]); };
 
   const deleteSession = async (e, sessionId) => {
@@ -87,23 +74,18 @@ export default function Chat() {
       await chatAPI.deleteSession(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (activeSession?.id === sessionId) newChat();
-    } catch {
-      toast.error("Failed to delete");
-    }
+    } catch { toast.error("Failed to delete"); }
   };
 
-  // ── Send message ─────────────────────────────────────────────────────────
   const handleSend = async (text) => {
     if (streaming) return;
 
-    // ── Determine which doc IDs to search ──────────────────────────────
-    // Project docs take priority; fallback to manually selected docs
     const docIds = activeProject
       ? (projectDocIds.length > 0 ? projectDocIds : null)
       : (selectedDocs.length > 0  ? selectedDocs  : null);
 
     if (activeProject && projectDocIds.length === 0) {
-      toast.error("No embedded documents in this project. Please embed documents first.");
+      toast.error("No embedded documents in this project.");
       return;
     }
 
@@ -117,16 +99,18 @@ export default function Chat() {
     const assistantId = Date.now() + 1;
     setMessages((prev) => [...prev, {
       id: assistantId, role: "assistant", content: "",
-      citations: [], streaming: true, created_at: new Date().toISOString(),
+      citations: [], streaming: true, confidence: null,
+      created_at: new Date().toISOString(),
     }]);
 
     try {
-      const token = localStorage.getItem("gm_token");
-      const body  = JSON.stringify({
+      const token    = localStorage.getItem("gm_token");
+      const body     = JSON.stringify({
         message:      text,
         session_id:   activeSession?.id || null,
         document_ids: docIds,
         project_id:   activeProject?.id || null,
+        use_crag:     true,
       });
 
       const response = await fetch("http://localhost:8000/api/chat/stream", {
@@ -144,7 +128,9 @@ export default function Chat() {
       const decoder   = new TextDecoder();
       let   buffer    = "";
       let   fullText  = "";
-      let   finalCitations = [];
+      let   finalCitations   = [];
+      let   finalConfidence  = null;
+      let   finalMessageId   = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -165,19 +151,38 @@ export default function Chat() {
               const created = newSess.find((s) => s.id === event.session_id);
               if (created) setActiveSession(created);
 
+            } else if (event.type === "confidence") {
+              finalConfidence = event.confidence;
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantId
+                  ? { ...m, confidence: event.confidence } : m)
+              );
+
             } else if (event.type === "token") {
               fullText += event.content;
               setMessages((prev) =>
                 prev.map((m) => m.id === assistantId
                   ? { ...m, content: fullText, streaming: true } : m)
               );
+
             } else if (event.type === "citations") {
               finalCitations = event.citations;
+
+            } else if (event.type === "message_id") {
+              finalMessageId = event.message_id;
 
             } else if (event.type === "done") {
               setMessages((prev) =>
                 prev.map((m) => m.id === assistantId
-                  ? { ...m, content: fullText, citations: finalCitations, streaming: false } : m)
+                  ? {
+                      ...m,
+                      id:         finalMessageId || assistantId,
+                      content:    fullText,
+                      citations:  finalCitations,
+                      confidence: finalConfidence,
+                      streaming:  false,
+                    }
+                  : m)
               );
               chatAPI.listSessions().then(({ data }) => setSessions(data)).catch(() => {});
 
@@ -201,7 +206,6 @@ export default function Chat() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
-      {/* Navbar */}
       <nav className="border-b border-slate-800 bg-[#0d0d14] px-6 py-4 flex items-center justify-between flex-shrink-0">
         <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
@@ -213,7 +217,6 @@ export default function Chat() {
           <span className="font-bold text-lg tracking-tight">GraphMind RAG</span>
         </button>
 
-        {/* Project selector */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-slate-500 text-sm">Project:</span>
@@ -237,27 +240,20 @@ export default function Chat() {
         </div>
       </nav>
 
-      {/* Project banner */}
       {activeProject && (
         <div className="bg-indigo-600/10 border-b border-indigo-500/20 px-6 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
             <span className="text-indigo-400">📁</span>
             <span className="text-indigo-300 font-medium">{activeProject.name}</span>
             <span className="text-slate-500">
-              · {projectDocIds.length} embedded doc{projectDocIds.length !== 1 ? "s" : ""} · searching across all project documents
+              · {projectDocIds.length} embedded doc{projectDocIds.length !== 1 ? "s" : ""} · CRAG enabled
             </span>
           </div>
-          <button
-            onClick={() => setActiveProject(null)}
-            className="text-slate-500 hover:text-white text-xs transition"
-          >
-            ✕ Clear
-          </button>
+          <button onClick={() => setActiveProject(null)} className="text-slate-500 hover:text-white text-xs transition">✕ Clear</button>
         </div>
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sessions sidebar */}
         <aside className="w-64 border-r border-slate-800 bg-[#0d0d14] flex flex-col flex-shrink-0">
           <div className="p-3 border-b border-slate-800">
             <button onClick={newChat}
@@ -269,7 +265,6 @@ export default function Chat() {
               New Chat
             </button>
           </div>
-
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {sessions.length === 0 ? (
               <p className="text-slate-600 text-xs text-center py-6">No chats yet</p>
@@ -286,8 +281,7 @@ export default function Chat() {
                     <p className="text-slate-600 text-xs mt-0.5">{s.message_count} messages</p>
                   </div>
                   <button onClick={(e) => deleteSession(e, s.id)}
-                    className="opacity-0 group-hover:opacity-100 text-slate-600
-                               hover:text-red-400 transition ml-1 flex-shrink-0">
+                    className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition ml-1 flex-shrink-0">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
@@ -298,32 +292,19 @@ export default function Chat() {
           </div>
         </aside>
 
-        {/* Chat area */}
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {messages.length === 0 && !loadingMsgs ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <div className="text-5xl mb-4">💬</div>
                 <h2 className="text-white font-semibold text-lg mb-2">
-                  {activeProject
-                    ? `Chat with "${activeProject.name}"`
-                    : "Chat with your documents"}
+                  {activeProject ? `Chat with "${activeProject.name}"` : "Chat with your documents"}
                 </h2>
                 <p className="text-slate-500 text-sm max-w-sm">
                   {activeProject
-                    ? projectDocIds.length > 0
-                      ? `Searching across ${projectDocIds.length} embedded document${projectDocIds.length !== 1 ? "s" : ""}.`
-                      : "⚠ No embedded documents in this project yet. Go to Documents and embed them first."
+                    ? `Searching ${projectDocIds.length} docs with CRAG for better answers.`
                     : "Ask anything about your embedded documents."}
                 </p>
-                {!activeProject && embeddedDocs.length === 0 && (
-                  <button
-                    onClick={() => navigate("/documents")}
-                    className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm transition"
-                  >
-                    Upload and embed a document first →
-                  </button>
-                )}
               </div>
             ) : loadingMsgs ? (
               <div className="flex justify-center py-10">
@@ -337,7 +318,6 @@ export default function Chat() {
             )}
             <div ref={messagesEndRef} />
           </div>
-
           <ChatInput
             onSend={handleSend}
             disabled={streaming}
