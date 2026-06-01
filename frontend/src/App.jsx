@@ -7,6 +7,8 @@ import Documents   from "./pages/Documents";
 import GraphView   from "./pages/GraphView";
 import Chat        from "./pages/Chat";
 import ProjectView from "./pages/ProjectView";
+import History     from "./pages/History";
+import Settings    from "./pages/Settings";
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("gm_token");
@@ -26,14 +28,19 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/login"          element={<PublicRoute><Login /></PublicRoute>} />
-          <Route path="/register"       element={<PublicRoute><Register /></PublicRoute>} />
-          <Route path="/dashboard"      element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/documents"      element={<ProtectedRoute><Documents /></ProtectedRoute>} />
-          <Route path="/graph"          element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
-          <Route path="/chat"           element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-          <Route path="/project/:id"    element={<ProtectedRoute><ProjectView /></ProtectedRoute>} />
-          <Route path="*"               element={<Navigate to="/" replace />} />
+
+          <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
+          <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+
+          <Route path="/dashboard"   element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/documents"   element={<ProtectedRoute><Documents /></ProtectedRoute>} />
+          <Route path="/graph"       element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
+          <Route path="/chat"        element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+          <Route path="/project/:id" element={<ProtectedRoute><ProjectView /></ProtectedRoute>} />
+          <Route path="/history"     element={<ProtectedRoute><History /></ProtectedRoute>} />
+          <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </ToastProvider>

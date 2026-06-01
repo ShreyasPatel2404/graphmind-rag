@@ -63,27 +63,18 @@ export const graphAPI = {
   get:    (docId) => api.get(`/api/graph/${docId}`),
   status: (docId) => api.get(`/api/graph/status/${docId}`),
   health: ()      => api.get("/api/graph/health"),
-
-  // Day 7 — entity search
   search: (q)     => api.get("/api/graph/search", { params: { q } }),
 };
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 export const chatAPI = {
-  // Sessions
   createSession: (data) => api.post("/api/chat/sessions", data),
   listSessions:  ()     => api.get("/api/chat/sessions"),
   getMessages:   (id)   => api.get(`/api/chat/sessions/${id}/messages`),
   deleteSession: (id)   => api.delete(`/api/chat/sessions/${id}`),
-
-  // Day 7 — feedback
-  feedback: (messageId, feedbackValue) =>
-    api.post("/api/chat/feedback", {
-      message_id: messageId,
-      feedback:   feedbackValue,   // "up" | "down"
-    }),
-
-  // Streaming chat is done via native fetch in Chat.jsx (SSE not supported by axios)
+  feedback:      (messageId, feedbackValue) =>
+    api.post("/api/chat/feedback", { message_id: messageId, feedback: feedbackValue }),
+  // export uses native fetch in History.jsx (file download)
 };
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
@@ -96,6 +87,19 @@ export const projectsAPI = {
   addDocuments:   (id, docIds) => api.post(`/api/projects/${id}/documents`, { document_ids: docIds }),
   removeDocument: (id, docId)  => api.delete(`/api/projects/${id}/documents/${docId}`),
   getGraph:       (id)         => api.get(`/api/projects/${id}/graph`),
+};
+
+// ─── Stats (Day 8) ────────────────────────────────────────────────────────────
+export const statsAPI = {
+  get:      ()  => api.get("/api/stats"),
+  activity: ()  => api.get("/api/stats/activity"),
+};
+
+// ─── Settings (Day 8) ─────────────────────────────────────────────────────────
+export const settingsAPI = {
+  get:        ()     => api.get("/api/settings"),
+  update:     (data) => api.put("/api/settings", data),
+  listModels: ()     => api.get("/api/settings/models"),
 };
 
 export default api;
