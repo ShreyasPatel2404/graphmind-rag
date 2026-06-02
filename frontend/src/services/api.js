@@ -59,11 +59,22 @@ export const embeddingsAPI = {
 
 // ─── Graph ────────────────────────────────────────────────────────────────────
 export const graphAPI = {
+  // Core
   build:  (docId) => api.post(`/api/graph/build/${docId}`),
   get:    (docId) => api.get(`/api/graph/${docId}`),
   status: (docId) => api.get(`/api/graph/status/${docId}`),
   health: ()      => api.get("/api/graph/health"),
-  search: (q)     => api.get("/api/graph/search", { params: { q } }),
+
+  // Day 7 — search
+  search: (q) => api.get("/api/graph/search", { params: { q } }),
+
+  // Day 9 — analytics + explorer
+  getStats:    (docId)             => api.get(`/api/graph/${docId}/stats`),
+  getEntities: (docId)             => api.get(`/api/graph/${docId}/entities`),
+  findPath:    (docId, from, to)   => api.get(`/api/graph/${docId}/path`, {
+    params: { from, to },
+  }),
+  // export uses native fetch in GraphView.jsx (file download)
 };
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
@@ -74,7 +85,6 @@ export const chatAPI = {
   deleteSession: (id)   => api.delete(`/api/chat/sessions/${id}`),
   feedback:      (messageId, feedbackValue) =>
     api.post("/api/chat/feedback", { message_id: messageId, feedback: feedbackValue }),
-  // export uses native fetch in History.jsx (file download)
 };
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
@@ -89,13 +99,13 @@ export const projectsAPI = {
   getGraph:       (id)         => api.get(`/api/projects/${id}/graph`),
 };
 
-// ─── Stats (Day 8) ────────────────────────────────────────────────────────────
+// ─── Stats ────────────────────────────────────────────────────────────────────
 export const statsAPI = {
-  get:      ()  => api.get("/api/stats"),
-  activity: ()  => api.get("/api/stats/activity"),
+  get:      () => api.get("/api/stats"),
+  activity: () => api.get("/api/stats/activity"),
 };
 
-// ─── Settings (Day 8) ─────────────────────────────────────────────────────────
+// ─── Settings ─────────────────────────────────────────────────────────────────
 export const settingsAPI = {
   get:        ()     => api.get("/api/settings"),
   update:     (data) => api.put("/api/settings", data),
