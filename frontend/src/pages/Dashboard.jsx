@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ProjectModal from "../components/ProjectModal";
+import { DashboardSkeleton } from "../components/Skeleton";
 import { authAPI, documentsAPI, projectsAPI, statsAPI } from "../services/api";
 
 export default function Dashboard() {
-  const navigate  = useNavigate();
+  const navigate   = useNavigate();
   const [user,     setUser]     = useState(null);
   const [docs,     setDocs]     = useState([]);
   const [projects, setProjects] = useState([]);
@@ -17,7 +18,10 @@ export default function Dashboard() {
     if (stored) setUser(JSON.parse(stored));
     else {
       authAPI.me()
-        .then(({ data }) => { setUser(data); localStorage.setItem("gm_user", JSON.stringify(data)); })
+        .then(({ data }) => {
+          setUser(data);
+          localStorage.setItem("gm_user", JSON.stringify(data));
+        })
         .catch(() => navigate("/login"));
     }
   }, [navigate]);
@@ -48,82 +52,92 @@ export default function Dashboard() {
     setShowModal(false);
   };
 
-  if (!user) return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-      <svg className="animate-spin w-6 h-6 text-indigo-500" viewBox="0 0 24 24" fill="none">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-      </svg>
-    </div>
+  // ── Navbar always visible ──────────────────────────────────────────────────
+  const navbar = (
+    <nav className="border-b border-slate-800 bg-[#0d0d14] px-6 py-4 flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+        </div>
+        <span className="font-bold text-lg tracking-tight text-white">GraphMind RAG</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <Link to="/documents" className="text-sm text-slate-400 hover:text-white transition">Documents</Link>
+        <Link to="/graph"     className="text-sm text-slate-400 hover:text-white transition">Graph</Link>
+        <Link to="/chat"      className="text-sm text-slate-400 hover:text-white transition">Chat</Link>
+        <Link to="/history"   className="text-sm text-slate-400 hover:text-white transition">History</Link>
+        <Link to="/settings"  className="text-sm text-slate-400 hover:text-white transition">Settings</Link>
+        {user && <span className="text-slate-600 text-sm hidden sm:block">{user.email}</span>}
+        <button
+          onClick={handleLogout}
+          className="text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition"
+        >
+          Logout
+        </button>
+      </div>
+    </nav>
   );
 
+  // ── Show skeleton while loading ────────────────────────────────────────────
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] text-white">
+        {navbar}
+        <DashboardSkeleton />
+      </div>
+    );
+  }
+
+  // ── Real stat cards ────────────────────────────────────────────────────────
   const statCards = [
     {
       icon: "📄", label: "Documents",
-      value: loading ? "…" : stats?.documents?.total ?? docs.length,
-      sub:   loading ? "" : `${stats?.documents?.ready ?? 0} ready`,
-      href:  "/documents", color: "indigo",
+      value: stats?.documents?.total ?? docs.length,
+      sub:   `${stats?.documents?.ready ?? 0} ready`,
+      href: "/documents",
     },
     {
       icon: "📁", label: "Projects",
-      value: loading ? "…" : stats?.projects?.total ?? projects.length,
+      value: stats?.projects?.total ?? projects.length,
       sub:   "Knowledge bases",
-      href:  null, color: "violet",
+      href: null,
     },
     {
       icon: "💬", label: "Chat Sessions",
-      value: loading ? "…" : stats?.chat?.sessions ?? 0,
-      sub:   loading ? "" : `${stats?.chat?.messages ?? 0} messages`,
-      href:  "/history", color: "blue",
+      value: stats?.chat?.sessions ?? 0,
+      sub:   `${stats?.chat?.messages ?? 0} messages`,
+      href: "/history",
     },
     {
       icon: "🔵", label: "Graph Nodes",
-      value: loading ? "…" : stats?.graph?.nodes ?? 0,
-      sub:   loading ? "" : `${stats?.graph?.edges ?? 0} edges`,
-      href:  "/graph", color: "emerald",
+      value: stats?.graph?.nodes ?? 0,
+      sub:   `${stats?.graph?.edges ?? 0} edges`,
+      href: "/graph",
     },
     {
-      icon: "🔢", label: "Vector Chunks",
-      value: loading ? "…" : stats?.vectors?.total ?? 0,
+      icon: "🔢", label: "Chunks",
+      value: stats?.vectors?.total ?? 0,
       sub:   "Stored embeddings",
-      href:  null, color: "amber",
+      href: null,
     },
     {
       icon: "👍", label: "Good Answers",
-      value: loading ? "…" : stats?.chat?.thumbs_up ?? 0,
+      value: stats?.chat?.thumbs_up ?? 0,
       sub:   "Positive feedback",
-      href:  null, color: "green",
+      href: null,
     },
   ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
-      {showModal && <ProjectModal onClose={() => setShowModal(false)} onCreated={handleProjectCreated}/>}
+      {showModal && (
+        <ProjectModal onClose={() => setShowModal(false)} onCreated={handleProjectCreated}/>
+      )}
 
-      {/* Navbar */}
-      <nav className="border-b border-slate-800 bg-[#0d0d14] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-            </svg>
-          </div>
-          <span className="font-bold text-lg tracking-tight">GraphMind RAG</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link to="/documents" className="text-sm text-slate-400 hover:text-white transition">Documents</Link>
-          <Link to="/graph"     className="text-sm text-slate-400 hover:text-white transition">Graph</Link>
-          <Link to="/chat"      className="text-sm text-slate-400 hover:text-white transition">Chat</Link>
-          <Link to="/history"   className="text-sm text-slate-400 hover:text-white transition">History</Link>
-          <Link to="/settings"  className="text-sm text-slate-400 hover:text-white transition">Settings</Link>
-          <span className="text-slate-600 text-sm">{user.email}</span>
-          <button onClick={handleLogout}
-            className="text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition">
-            Logout
-          </button>
-        </div>
-      </nav>
+      {navbar}
 
       <main className="max-w-6xl mx-auto px-6 py-12">
         {/* Welcome */}
@@ -141,8 +155,8 @@ export default function Dashboard() {
               ⚙️ Settings
             </Link>
             <Link to="/chat"
-              className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg
-                         transition flex items-center gap-2">
+              className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2
+                         rounded-lg transition flex items-center gap-2">
               💬 New Chat
             </Link>
           </div>
@@ -166,30 +180,38 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Projects */}
+          {/* Projects panel */}
           <div className="bg-[#13131a] border border-slate-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-white font-semibold">Projects</h2>
-              <button onClick={() => setShowModal(true)}
+              <button
+                onClick={() => setShowModal(true)}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium
-                           px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                           px-3 py-1.5 rounded-lg transition flex items-center gap-1"
+              >
                 + New
               </button>
             </div>
+
             {projects.length === 0 ? (
-              <div className="text-center py-6">
+              <div className="text-center py-8">
                 <p className="text-slate-500 text-sm mb-3">No projects yet</p>
-                <button onClick={() => setShowModal(true)}
-                  className="text-indigo-400 hover:text-indigo-300 text-sm transition">
+                <button
+                  onClick={() => setShowModal(true)}
+                  className="text-indigo-400 hover:text-indigo-300 text-sm transition"
+                >
                   Create your first project →
                 </button>
               </div>
             ) : (
               <div className="space-y-2">
                 {projects.map((p) => (
-                  <button key={p.id} onClick={() => navigate(`/project/${p.id}`)}
+                  <button
+                    key={p.id}
+                    onClick={() => navigate(`/project/${p.id}`)}
                     className="w-full text-left p-3 rounded-lg hover:bg-slate-800
-                               border border-transparent hover:border-slate-700 transition">
+                               border border-transparent hover:border-slate-700 transition"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-white text-sm font-medium">{p.name}</span>
                       <span className="text-slate-600 text-xs">{p.document_count} docs</span>
@@ -203,7 +225,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Recent docs */}
+          {/* Recent documents panel */}
           <div className="bg-[#13131a] border border-slate-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-white font-semibold">Recent Documents</h2>
@@ -211,26 +233,35 @@ export default function Dashboard() {
                 View all →
               </Link>
             </div>
+
             {docs.length === 0 ? (
-              <div className="text-center py-6">
+              <div className="text-center py-8">
                 <p className="text-slate-500 text-sm mb-3">No documents yet</p>
                 <Link to="/documents"
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition">
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm
+                             px-4 py-2 rounded-lg transition inline-block">
                   Upload first document
                 </Link>
               </div>
             ) : (
               <div className="space-y-2">
                 {docs.slice(0, 6).map((doc) => (
-                  <div key={doc.id} className="flex items-center justify-between py-2
-                       border-b border-slate-800 last:border-0">
-                    <span className="text-sm text-slate-300 truncate max-w-[200px]">{doc.original_name}</span>
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between py-2
+                               border-b border-slate-800 last:border-0"
+                  >
+                    <span className="text-sm text-slate-300 truncate max-w-[200px]">
+                      {doc.original_name}
+                    </span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
                       doc.status === "graph_ready" ? "bg-emerald-500/20 text-emerald-400" :
                       doc.status === "embedded"    ? "bg-blue-500/20    text-blue-400"    :
                       doc.status === "ready"       ? "bg-yellow-500/20  text-yellow-400"  :
                                                      "bg-slate-500/20   text-slate-400"
-                    }`}>{doc.status}</span>
+                    }`}>
+                      {doc.status}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -238,33 +269,35 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Build progress */}
+        {/* 10-Day Build Progress */}
         <div className="mt-6 bg-[#13131a] border border-slate-800 rounded-xl p-6">
           <h2 className="text-white font-semibold mb-4">10-Day Build Progress</h2>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
-              {day:1,label:"Auth"},
-              {day:2,label:"Upload"},
-              {day:3,label:"Embeddings"},
-              {day:4,label:"Graph"},
-              {day:5,label:"RAG Chat"},
-              {day:6,label:"Projects"},
-              {day:7,label:"CRAG"},
-              {day:8,label:"Analytics"},
-              {day:9,label:"Performance"},
-              {day:10,label:"Deploy"},
+              { day: 1,  label: "Auth"        },
+              { day: 2,  label: "Upload"       },
+              { day: 3,  label: "Embeddings"   },
+              { day: 4,  label: "Graph"        },
+              { day: 5,  label: "RAG Chat"     },
+              { day: 6,  label: "Projects"     },
+              { day: 7,  label: "CRAG"         },
+              { day: 8,  label: "Analytics"    },
+              { day: 9,  label: "Explorer"     },
+              { day: 10, label: "Deploy"       },
             ].map((item) => (
-              <div key={item.day}
-                className={`flex flex-col items-center p-3 rounded-xl border text-xs font-medium ${
-                  item.day <= 8
-                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                    : "bg-slate-800/50   border-slate-800       text-slate-600"
-                }`}>
-                <span className="text-lg mb-1">{item.day <= 8 ? "✓" : item.day}</span>
+              <div
+                key={item.day}
+                className="flex flex-col items-center p-3 rounded-xl border text-xs font-medium
+                           bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+              >
+                <span className="text-lg mb-1">✓</span>
                 <span>{item.label}</span>
               </div>
             ))}
           </div>
+          <p className="text-center text-slate-500 text-xs mt-4">
+            🎉 All 10 days complete — fully deployed!
+          </p>
         </div>
       </main>
     </div>

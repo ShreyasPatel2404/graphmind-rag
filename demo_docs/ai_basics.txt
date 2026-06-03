@@ -1,0 +1,30 @@
+Introduction to Artificial Intelligence
+
+Artificial Intelligence (AI) is the simulation of human intelligence processes by computer systems. These processes include learning, reasoning, and self-correction. AI was founded as an academic discipline in 1956 by John McCarthy at Dartmouth College.
+
+Machine Learning
+Machine learning is a subset of AI that enables systems to learn from data without being explicitly programmed. Arthur Samuel coined the term in 1959. The three main types are supervised learning, unsupervised learning, and reinforcement learning.
+
+Deep Learning
+Deep learning uses neural networks with many layers (hence "deep") to learn representations of data. Geoffrey Hinton, Yann LeCun, and Yoshua Bengio — known as the "Godfathers of Deep Learning" — won the 2018 Turing Award for their contributions.
+
+Neural Networks
+Neural networks are computing systems inspired by biological neural networks in animal brains. A neural network consists of layers of interconnected nodes (neurons). The input layer receives data, hidden layers process it, and the output layer produces results.
+
+Transformers
+The Transformer architecture, introduced in the 2017 paper "Attention Is All You Need" by Vaswani et al., revolutionized natural language processing. Transformers use self-attention mechanisms to process sequential data in parallel. GPT (Generative Pre-trained Transformer) by OpenAI and BERT by Google are built on this architecture.
+
+Large Language Models
+Large Language Models (LLMs) are AI models trained on massive text datasets. GPT-4 by OpenAI, Claude by Anthropic, Gemini by Google, and LLaMA by Meta are prominent examples. These models can generate human-like text, answer questions, write code, and perform complex reasoning.
+
+Retrieval-Augmented Generation
+RAG (Retrieval-Augmented Generation) combines information retrieval with text generation. It retrieves relevant documents from a knowledge base and uses them as context for the language model. RAG improves accuracy and reduces hallucinations by grounding responses in actual documents.
+
+Vector Embeddings
+Vector embeddings are numerical representations of text that capture semantic meaning. Similar concepts have similar embedding vectors. Models like nomic-embed-text convert text into high-dimensional vectors stored in vector databases like ChromaDB, Pinecone, or Weaviate.
+
+Knowledge Graphs
+Knowledge graphs represent information as entities and relationships. Neo4j is a popular graph database. Entities like "Albert Einstein" and "Princeton University" can be connected by the relationship "worked at". Knowledge graphs enable complex reasoning that vector search alone cannot provide.
+
+Reinforcement Learning from Human Feedback
+RLHF is a technique used to train language models to be helpful, harmless, and honest. OpenAI used RLHF to train InstructGPT and ChatGPT. Anthropic uses Constitutional AI (CAI) for training Claude.

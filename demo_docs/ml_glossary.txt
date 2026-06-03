@@ -1,0 +1,52 @@
+Machine Learning Glossary
+
+Algorithm
+A set of rules or instructions that a machine learning model follows to learn from data. Common algorithms include linear regression, decision trees, random forests, and gradient boosting.
+
+Backpropagation
+The algorithm used to train neural networks. It calculates the gradient of the loss function with respect to each weight by propagating errors backward through the network. Geoffrey Hinton popularized backpropagation for training deep neural networks.
+
+BERT
+Bidirectional Encoder Representations from Transformers, developed by Google in 2018. BERT reads text bidirectionally (both left-to-right and right-to-left) to understand context. It achieved state-of-the-art results on many NLP benchmarks.
+
+Convolutional Neural Network (CNN)
+A type of neural network particularly effective for image recognition tasks. CNNs use convolutional layers to detect features like edges, shapes, and textures. Yann LeCun developed LeNet, one of the first CNNs, in 1998.
+
+Diffusion Models
+Generative models that learn to reverse a gradual noising process. Stable Diffusion and DALL-E 2 use diffusion models for image generation. OpenAI's Sora uses diffusion transformers for video generation.
+
+Embedding
+A low-dimensional, dense vector representation of high-dimensional data. Word2Vec by Google and GloVe by Stanford are classic word embedding methods. Modern embedding models like OpenAI's text-embedding-ada-002 produce 1536-dimensional vectors.
+
+Fine-tuning
+The process of further training a pre-trained model on a specific dataset. Fine-tuning adapts a general model to a particular task or domain. LoRA (Low-Rank Adaptation) is a popular parameter-efficient fine-tuning technique.
+
+Gradient Descent
+An optimization algorithm that minimizes the loss function by iteratively moving in the direction of steepest descent. Variants include stochastic gradient descent (SGD), Adam, and AdaGrad.
+
+Hallucination
+When a language model generates plausible-sounding but factually incorrect information. Hallucinations are a key challenge in LLM deployment. RAG systems reduce hallucinations by grounding responses in retrieved documents.
+
+Hyperparameter
+Configuration settings set before training that control the learning process. Examples include learning rate, batch size, and number of layers. Hyperparameter tuning finds the best configuration for a model.
+
+Inference
+The process of using a trained model to make predictions on new data. Inference speed is critical for production deployments. Quantization reduces model size to speed up inference.
+
+Loss Function
+A function that measures the difference between predicted and actual values. Mean Squared Error (MSE) is used for regression. Cross-entropy loss is used for classification. The goal of training is to minimize the loss.
+
+Overfitting
+When a model performs well on training data but poorly on new data. Overfitting occurs when a model memorizes training examples rather than learning general patterns. Regularization, dropout, and early stopping prevent overfitting.
+
+Perplexity
+A measurement of how well a probability model predicts a sample. Lower perplexity means better performance. It is commonly used to evaluate language models.
+
+Quantization
+Reducing the precision of model weights from 32-bit floats to 8-bit or 4-bit integers. Quantization reduces memory requirements and speeds up inference with minimal quality loss. Llama.cpp enables quantized models to run on consumer hardware.
+
+Transformer Architecture
+The foundational architecture for modern LLMs, consisting of encoder and decoder blocks with multi-head self-attention. The attention mechanism allows the model to weigh the importance of different words when processing each word. Transformers replaced RNNs as the dominant architecture for NLP tasks.
+
+Zero-shot Learning
+The ability of a model to perform tasks it was not explicitly trained on. GPT-4 can write code in languages it was not specifically fine-tuned for. This emergent capability distinguishes large language models from traditional ML models.
