@@ -1,5 +1,7 @@
 """
-graph_builder.py — Extract triples + write to Neo4j with project_id tagging
+graph_builder.py — Extract triples + write to Neo4j
+spaCy removed for deployment compatibility.
+Entity typing uses keyword-based heuristics instead.
 """
 
 import json
@@ -7,32 +9,53 @@ import logging
 import re
 from typing import Optional
 
-import spacy
 from app.rag.ollama_client import generate
 from app.rag.neo4j_client import get_driver, clear_document_graph
 
 logger = logging.getLogger(__name__)
 
-_nlp = None
 
-def get_nlp():
-    global _nlp
-    if _nlp is None:
-        try:
-            _nlp = spacy.load("en_core_web_sm")
-        except OSError:
-            _nlp = None
-    return _nlp
-
-
-SPACY_TO_TYPE = {
-    "PERSON": "Person", "ORG": "Organization", "GPE": "Place",
-    "LOC": "Place", "PRODUCT": "Product", "EVENT": "Event",
-    "WORK_OF_ART": "Concept", "LAW": "Concept", "NORP": "Organization",
-    "FAC": "Place",
+# ─── Keyword-based entity type classifier (replaces spaCy) ───────────────────
+PERSON_HINTS = {
+    "ceo", "founder", "president", "director", "engineer", "scientist",
+    "researcher", "professor", "dr", "mr", "mrs", "ms", "phd",
+    "geoffrey", "yann", "yoshua", "andrew", "elon", "sam", "sundar",
+    "hinton", "lecun", "bengio", "turing", "minsky", "mccarthy",
+}
+ORG_HINTS = {
+    "inc", "corp", "ltd", "llc", "university", "institute", "lab",
+    "laboratory", "company", "organization", "foundation", "group",
+    "openai", "anthropic", "google", "microsoft", "meta", "apple",
+    "deepmind", "nvidia", "hugging face", "stanford", "mit", "oxford",
+}
+PLACE_HINTS = {
+    "city", "country", "state", "region", "continent", "ocean", "river",
+    "mountain", "street", "avenue", "road", "park",
+    "california", "london", "new york", "paris", "beijing", "tokyo",
+    "silicon valley", "seattle", "boston",
 }
 
 
+def classify_entity_type(name: str) -> str:
+    """Classify entity type using keyword heuristics."""
+    lower = name.lower()
+    words = set(lower.split())
+
+    if words & PERSON_HINTS or any(h in lower for h in PERSON_HINTS):
+        return "Person"
+    if words & ORG_HINTS or any(h in lower for h in ORG_HINTS):
+        return "Organization"
+    if words & PLACE_HINTS or any(h in lower for h in PLACE_HINTS):
+        return "Place"
+
+    # Capitalized single words that aren't concepts → likely named entity
+    if name[0].isupper() and len(name.split()) <= 2:
+        return "Concept"
+
+    return "Concept"
+
+
+# ─── Extract triples via Ollama LLM ──────────────────────────────────────────
 def extract_triples(text_chunk: str) -> list[dict]:
     prompt = f"""Extract knowledge graph triples from the text below.
 Return ONLY a valid JSON array. No explanation, no markdown, no code blocks.
@@ -67,36 +90,13 @@ JSON array:"""
                         "subject":      subj,
                         "relation":     rel,
                         "object":       obj,
-                        "subject_type": t.get("subject_type", "Concept"),
-                        "object_type":  t.get("object_type", "Concept"),
+                        "subject_type": t.get("subject_type", classify_entity_type(subj)),
+                        "object_type":  t.get("object_type",  classify_entity_type(obj)),
                     })
         return valid
     except Exception as e:
         logger.warning(f"Triple extraction failed: {e}")
         return []
-
-
-def enrich_with_spacy(triples: list[dict], text: str) -> list[dict]:
-    nlp = get_nlp()
-    if not nlp:
-        return triples
-    doc = nlp(text[:5000])
-    entity_map = {
-        ent.text.lower(): SPACY_TO_TYPE.get(ent.label_, "Concept")
-        for ent in doc.ents
-    }
-    for t in triples:
-        for key in ("subject", "object"):
-            word = t[key].lower()
-            type_key = f"{key}_type"
-            if word in entity_map:
-                t[type_key] = entity_map[word]
-            else:
-                for k, v in entity_map.items():
-                    if k in word or word in k:
-                        t[type_key] = v
-                        break
-    return triples
 
 
 def write_to_neo4j(
@@ -127,13 +127,13 @@ def write_to_neo4j(
                     "obj":        t["object"],
                     "relation":   t["relation"],
                     "subj_type":  t.get("subject_type", "Concept"),
-                    "obj_type":   t.get("object_type", "Concept"),
+                    "obj_type":   t.get("object_type",  "Concept"),
                     "doc_id":     doc_id,
                     "user_id":    user_id,
                     "project_id": project_id,
                 }
             )
-    logger.info(f"Wrote {len(triples)} triples for doc {doc_id} project {project_id}")
+    logger.info(f"Wrote {len(triples)} triples for doc {doc_id}")
 
 
 def fetch_graph_json(doc_id: int, user_id: int) -> dict:
@@ -169,7 +169,12 @@ def fetch_graph_json(doc_id: int, user_id: int) -> dict:
         if e["source"] in node_names and e["target"] in node_names
     ]
 
-    return {"nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges)}
+    return {
+        "nodes":      nodes,
+        "edges":      edges,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+    }
 
 
 def build_graph_from_chunks(
@@ -181,13 +186,12 @@ def build_graph_from_chunks(
 ) -> dict:
     clear_document_graph(doc_id)
     all_triples = []
-    processed = 0
+    processed   = 0
 
     for i, chunk in enumerate(chunks[:max_chunks]):
         try:
             triples = extract_triples(chunk)
             if triples:
-                triples = enrich_with_spacy(triples, chunk)
                 all_triples.extend(triples)
             processed += 1
         except Exception as e:
@@ -195,7 +199,7 @@ def build_graph_from_chunks(
             continue
 
     # Deduplicate
-    seen = set()
+    seen   = set()
     unique = []
     for t in all_triples:
         key = (t["subject"].lower(), t["relation"].lower(), t["object"].lower())

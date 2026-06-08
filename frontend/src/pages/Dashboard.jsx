@@ -4,14 +4,34 @@ import ProjectModal from "../components/ProjectModal";
 import { DashboardSkeleton } from "../components/Skeleton";
 import { authAPI, documentsAPI, projectsAPI, statsAPI } from "../services/api";
 
+// ─── All possible document statuses + their badge styles ──────────────────────
+const STATUS_STYLE = {
+  processing:    "bg-yellow-500/20  text-yellow-400",
+  ready:         "bg-blue-500/20    text-blue-400",
+  embedded:      "bg-indigo-500/20  text-indigo-400",
+  graph_building:"bg-orange-500/20  text-orange-400",
+  graph_ready:   "bg-emerald-500/20 text-emerald-400",
+  error:         "bg-red-500/20     text-red-400",
+};
+
+function StatusBadge({ status }) {
+  const cls   = STATUS_STYLE[status] || "bg-slate-500/20 text-slate-400";
+  const label = status?.replace("_", " ") || "unknown";
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
 export default function Dashboard() {
-  const navigate   = useNavigate();
-  const [user,     setUser]     = useState(null);
-  const [docs,     setDocs]     = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [stats,    setStats]    = useState(null);
-  const [loading,  setLoading]  = useState(true);
-  const [showModal,setShowModal]= useState(false);
+  const navigate    = useNavigate();
+  const [user,      setUser]      = useState(null);
+  const [docs,      setDocs]      = useState([]);
+  const [projects,  setProjects]  = useState([]);
+  const [stats,     setStats]     = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("gm_user");
@@ -52,9 +72,9 @@ export default function Dashboard() {
     setShowModal(false);
   };
 
-  // ── Navbar always visible ──────────────────────────────────────────────────
+  // ── Navbar (always visible) ────────────────────────────────────────────────
   const navbar = (
-    <nav className="border-b border-slate-800 bg-[#0d0d14] px-6 py-4 flex items-center justify-between flex-shrink-0">
+    <nav className="border-b border-slate-800 bg-[#0d0d14] px-6 py-4 flex items-center justify-between">
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
@@ -70,10 +90,13 @@ export default function Dashboard() {
         <Link to="/chat"      className="text-sm text-slate-400 hover:text-white transition">Chat</Link>
         <Link to="/history"   className="text-sm text-slate-400 hover:text-white transition">History</Link>
         <Link to="/settings"  className="text-sm text-slate-400 hover:text-white transition">Settings</Link>
-        {user && <span className="text-slate-600 text-sm hidden sm:block">{user.email}</span>}
+        {user && (
+          <span className="text-slate-600 text-sm hidden sm:block">{user.email}</span>
+        )}
         <button
           onClick={handleLogout}
-          className="text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition"
+          className="text-sm text-slate-400 hover:text-white bg-slate-800
+                     hover:bg-slate-700 px-3 py-1.5 rounded-lg transition"
         >
           Logout
         </button>
@@ -81,60 +104,69 @@ export default function Dashboard() {
     </nav>
   );
 
-  // ── Show skeleton while loading ────────────────────────────────────────────
+  // ── Skeleton while loading ─────────────────────────────────────────────────
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white">
+      <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
         {navbar}
         <DashboardSkeleton />
       </div>
     );
   }
 
-  // ── Real stat cards ────────────────────────────────────────────────────────
+  // ── Stat cards ─────────────────────────────────────────────────────────────
   const statCards = [
     {
-      icon: "📄", label: "Documents",
+      icon:  "📄",
+      label: "Documents",
       value: stats?.documents?.total ?? docs.length,
       sub:   `${stats?.documents?.ready ?? 0} ready`,
-      href: "/documents",
+      href:  "/documents",
     },
     {
-      icon: "📁", label: "Projects",
+      icon:  "📁",
+      label: "Projects",
       value: stats?.projects?.total ?? projects.length,
       sub:   "Knowledge bases",
-      href: null,
+      href:  null,
     },
     {
-      icon: "💬", label: "Chat Sessions",
+      icon:  "💬",
+      label: "Chat Sessions",
       value: stats?.chat?.sessions ?? 0,
       sub:   `${stats?.chat?.messages ?? 0} messages`,
-      href: "/history",
+      href:  "/history",
     },
     {
-      icon: "🔵", label: "Graph Nodes",
+      icon:  "🔵",
+      label: "Graph Nodes",
       value: stats?.graph?.nodes ?? 0,
       sub:   `${stats?.graph?.edges ?? 0} edges`,
-      href: "/graph",
+      href:  "/graph",
     },
     {
-      icon: "🔢", label: "Chunks",
+      icon:  "🔢",
+      label: "Chunks",
       value: stats?.vectors?.total ?? 0,
       sub:   "Stored embeddings",
-      href: null,
+      href:  null,
     },
     {
-      icon: "👍", label: "Good Answers",
+      icon:  "👍",
+      label: "Good Answers",
       value: stats?.chat?.thumbs_up ?? 0,
       sub:   "Positive feedback",
-      href: null,
+      href:  null,
     },
   ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       {showModal && (
-        <ProjectModal onClose={() => setShowModal(false)} onCreated={handleProjectCreated}/>
+        <ProjectModal
+          onClose={() => setShowModal(false)}
+          onCreated={handleProjectCreated}
+        />
       )}
 
       {navbar}
@@ -149,14 +181,19 @@ export default function Dashboard() {
             <p className="text-slate-400">Your knowledge graph workspace.</p>
           </div>
           <div className="flex gap-3">
-            <Link to="/settings"
+            <Link
+              to="/settings"
               className="text-sm text-slate-400 hover:text-white border border-slate-700
-                         hover:border-slate-600 px-4 py-2 rounded-lg transition flex items-center gap-2">
+                         hover:border-slate-600 px-4 py-2 rounded-lg transition
+                         flex items-center gap-2"
+            >
               ⚙️ Settings
             </Link>
-            <Link to="/chat"
-              className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2
-                         rounded-lg transition flex items-center gap-2">
+            <Link
+              to="/chat"
+              className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white
+                         px-4 py-2 rounded-lg transition flex items-center gap-2"
+            >
               💬 New Chat
             </Link>
           </div>
@@ -179,6 +216,7 @@ export default function Dashboard() {
           ))}
         </div>
 
+        {/* Projects + Recent Documents */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Projects panel */}
           <div className="bg-[#13131a] border border-slate-800 rounded-xl p-6">
@@ -186,8 +224,9 @@ export default function Dashboard() {
               <h2 className="text-white font-semibold">Projects</h2>
               <button
                 onClick={() => setShowModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium
-                           px-3 py-1.5 rounded-lg transition flex items-center gap-1"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs
+                           font-medium px-3 py-1.5 rounded-lg transition
+                           flex items-center gap-1"
               >
                 + New
               </button>
@@ -217,7 +256,9 @@ export default function Dashboard() {
                       <span className="text-slate-600 text-xs">{p.document_count} docs</span>
                     </div>
                     {p.description && (
-                      <p className="text-slate-500 text-xs mt-0.5 truncate">{p.description}</p>
+                      <p className="text-slate-500 text-xs mt-0.5 truncate">
+                        {p.description}
+                      </p>
                     )}
                   </button>
                 ))}
@@ -229,7 +270,10 @@ export default function Dashboard() {
           <div className="bg-[#13131a] border border-slate-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-white font-semibold">Recent Documents</h2>
-              <Link to="/documents" className="text-indigo-400 hover:text-indigo-300 text-sm transition">
+              <Link
+                to="/documents"
+                className="text-indigo-400 hover:text-indigo-300 text-sm transition"
+              >
                 View all →
               </Link>
             </div>
@@ -237,9 +281,11 @@ export default function Dashboard() {
             {docs.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-slate-500 text-sm mb-3">No documents yet</p>
-                <Link to="/documents"
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm
-                             px-4 py-2 rounded-lg transition inline-block">
+                <Link
+                  to="/documents"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white
+                             text-sm px-4 py-2 rounded-lg transition inline-block"
+                >
                   Upload first document
                 </Link>
               </div>
@@ -251,54 +297,21 @@ export default function Dashboard() {
                     className="flex items-center justify-between py-2
                                border-b border-slate-800 last:border-0"
                   >
-                    <span className="text-sm text-slate-300 truncate max-w-[200px]">
+                    <span
+                      className="text-sm text-slate-300 truncate max-w-[200px]"
+                      title={doc.original_name}
+                    >
                       {doc.original_name}
                     </span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
-                      doc.status === "graph_ready" ? "bg-emerald-500/20 text-emerald-400" :
-                      doc.status === "embedded"    ? "bg-blue-500/20    text-blue-400"    :
-                      doc.status === "ready"       ? "bg-yellow-500/20  text-yellow-400"  :
-                                                     "bg-slate-500/20   text-slate-400"
-                    }`}>
-                      {doc.status}
-                    </span>
+                    {/* ✅ Fixed: uses StatusBadge which covers ALL statuses */}
+                    <StatusBadge status={doc.status} />
                   </div>
                 ))}
               </div>
             )}
           </div>
         </div>
-
-        {/* 10-Day Build Progress */}
-        <div className="mt-6 bg-[#13131a] border border-slate-800 rounded-xl p-6">
-          <h2 className="text-white font-semibold mb-4">10-Day Build Progress</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {[
-              { day: 1,  label: "Auth"        },
-              { day: 2,  label: "Upload"       },
-              { day: 3,  label: "Embeddings"   },
-              { day: 4,  label: "Graph"        },
-              { day: 5,  label: "RAG Chat"     },
-              { day: 6,  label: "Projects"     },
-              { day: 7,  label: "CRAG"         },
-              { day: 8,  label: "Analytics"    },
-              { day: 9,  label: "Explorer"     },
-              { day: 10, label: "Deploy"       },
-            ].map((item) => (
-              <div
-                key={item.day}
-                className="flex flex-col items-center p-3 rounded-xl border text-xs font-medium
-                           bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-              >
-                <span className="text-lg mb-1">✓</span>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-center text-slate-500 text-xs mt-4">
-            🎉 All 10 days complete — fully deployed!
-          </p>
-        </div>
+        {/* ✅ 10-Day Build Progress section REMOVED */}
       </main>
     </div>
   );

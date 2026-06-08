@@ -25,6 +25,9 @@ pip-wheel-metadata/
 *.sqlite
 *.sqlite3
 
+# ChromaDB
+backend/chroma_db/
+
 # ─── Uploads (user data — never commit) ──────────────────────────────────────
 backend/uploads/
 

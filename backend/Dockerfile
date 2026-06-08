@@ -2,22 +2,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for spaCy + chromadb
+# Minimal system deps — no gcc needed without spaCy
 RUN apt-get update && apt-get install -y \
-    gcc g++ curl \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm
-
-# App code
+# Copy app code
 COPY . .
 
-# Create data dirs
+# Create persistent data directories
 RUN mkdir -p /app/data /app/uploads /app/chroma_db
 
 EXPOSE 8000
