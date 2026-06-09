@@ -2,15 +2,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Minimal system deps — no gcc needed without spaCy
+# g++ is REQUIRED for chromadb/chroma-hnswlib compilation
 RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
     curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY . .

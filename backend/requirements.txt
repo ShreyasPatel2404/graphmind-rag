@@ -20,8 +20,10 @@ pydantic-settings==2.2.1
 # ─── Config ───────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1
 
-# ─── AI / Vector ──────────────────────────────────────────────────────────────
-chromadb==0.4.24
+# ─── ChromaDB — upgraded to version with pre-built wheels for Python 3.12 ────
+chromadb==0.5.23
+
+# ─── AI ───────────────────────────────────────────────────────────────────────
 ollama==0.2.1
 
 # ─── Graph ────────────────────────────────────────────────────────────────────
@@ -33,6 +35,3 @@ python-docx==1.1.2
 beautifulsoup4==4.12.3
 requests==2.32.3
 aiofiles==23.2.1
-
-# NOTE: spaCy removed — entity enrichment uses regex fallback in graph_builder.py
-# This eliminates the pydantic v1/v2 conflict entirely
